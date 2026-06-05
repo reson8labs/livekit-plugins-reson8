@@ -1,5 +1,3 @@
-import asyncio
-
 from dotenv import load_dotenv
 from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli
 from livekit.agents.voice import VoiceAgent
@@ -11,8 +9,11 @@ load_dotenv()
 async def entrypoint(ctx: JobContext):
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
+    # reson8.STT streams with server-side turn detection, which keeps
+    # voice-agent responses snappy. Any language is supported: omit `language`
+    # to auto-detect, or pass any code (e.g. language="nl") to pin it.
     agent = VoiceAgent(
-        stt=reson8.STT(language="nl"),
+        stt=reson8.STT(),
         llm=openai.LLM(),
         tts=openai.TTS(),
     )
