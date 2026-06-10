@@ -36,14 +36,21 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/reson8lab/livekit-plugins-reson8.git",
+    "url": "git+https://github.com/reson8labs/livekit-plugins-reson8.git",
     "directory": "ts"
+  },
+  "homepage": "https://github.com/reson8labs/livekit-plugins-reson8/tree/main/ts#readme",
+  "bugs": {
+    "url": "https://github.com/reson8labs/livekit-plugins-reson8/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsup",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run clean && npm run build"
+    "prepublishOnly": "npm run clean && npm run typecheck && npm run build"
   },
   "dependencies": {
     "ws": "^8.18.0"
