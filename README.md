@@ -20,7 +20,7 @@ language, or pass any language code (e.g. `"en"`, `"nl"`, `"es"`, ...) to pin it
 | Language | Directory | Package |
 |---|---|---|
 | Python | [`python/`](python/) | `livekit-plugins-reson8` |
-| TypeScript | [`ts/`](ts/) | `@reson8/agents-plugin-reson8` |
+| TypeScript | [`ts/`](ts/) | `@reson8-labs/agents-plugin-reson8` |
 
 Both packages implement the same Reson8 protocol and read the same
 `RESON8_API_KEY` / `RESON8_API_URL` environment variables. See each directory's

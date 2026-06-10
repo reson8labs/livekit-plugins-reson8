@@ -1,6 +1,6 @@
 import { type JobContext, WorkerOptions, cli, defineAgent, voice } from '@livekit/agents';
 import * as openai from '@livekit/agents-plugin-openai';
-import * as reson8 from '@reson8/agents-plugin-reson8';
+import * as reson8 from '@reson8-labs/agents-plugin-reson8';
 import { fileURLToPath } from 'node:url';
 
 export default defineAgent({

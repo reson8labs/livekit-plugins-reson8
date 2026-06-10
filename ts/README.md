@@ -1,4 +1,4 @@
-# @reson8/agents-plugin-reson8
+# @reson8-labs/agents-plugin-reson8
 
 [Reson8](https://reson8.dev) STT plugin for
 [LiveKit Agents for Node.js](https://github.com/livekit/agents-js).
@@ -30,7 +30,7 @@ new reson8.STT({ language: 'nl' }); // Dutch
 ## Installation
 
 ```bash
-npm install @reson8/agents-plugin-reson8
+npm install @reson8-labs/agents-plugin-reson8
 # peer dependencies (provided by your agent app):
 npm install @livekit/agents @livekit/rtc-node
 ```
@@ -38,7 +38,7 @@ npm install @livekit/agents @livekit/rtc-node
 ## Usage
 
 ```ts
-import * as reson8 from '@reson8/agents-plugin-reson8';
+import * as reson8 from '@reson8-labs/agents-plugin-reson8';
 
 const stt = new reson8.STT({
   apiKey: 'your-api-key', // or set RESON8_API_KEY
@@ -51,7 +51,7 @@ const stt = new reson8.STT({
 ```ts
 import { voice } from '@livekit/agents';
 import * as openai from '@livekit/agents-plugin-openai';
-import * as reson8 from '@reson8/agents-plugin-reson8';
+import * as reson8 from '@reson8-labs/agents-plugin-reson8';
 
 const session = new voice.AgentSession({
   stt: new reson8.STT(), // streaming + turn detection, any language
