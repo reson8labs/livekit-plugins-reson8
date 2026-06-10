@@ -1,3 +1,4 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -11,3 +12,11 @@ build/
 venv/
 .mypy_cache/
 .ruff_cache/
+
+# Node / TypeScript
+node_modules/
+ts/dist/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+.pnpm-store/

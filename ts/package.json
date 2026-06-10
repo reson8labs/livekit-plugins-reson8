@@ -1,0 +1,63 @@
+{
+  "name": "@reson8/agents-plugin-reson8",
+  "version": "0.2.0",
+  "description": "Reson8 STT plugin for LiveKit Agents for Node.js",
+  "author": "Reson8",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "livekit",
+    "agents",
+    "stt",
+    "reson8",
+    "speech-to-text"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reson8lab/livekit-plugins-reson8.git",
+    "directory": "ts"
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "peerDependencies": {
+    "@livekit/agents": "^1.4.0",
+    "@livekit/rtc-node": "^0.13.0"
+  },
+  "devDependencies": {
+    "@livekit/agents": "^1.4.5",
+    "@livekit/rtc-node": "^0.13.29",
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.5.10",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.0"
+  }
+}
