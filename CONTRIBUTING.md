@@ -3,6 +3,22 @@
 See the [Development section of the README](README.md#development) for the local
 setup (uv, Ruff, mypy, pytest).
 
+## Pre-commit hooks
+
+After `uv sync`, enable the git hooks once:
+
+```bash
+uv run pre-commit install
+```
+
+They run Ruff (lint + format) and mypy on each commit — the same checks as CI,
+so failures surface before you push. To run them across the whole repo on
+demand:
+
+```bash
+uv run pre-commit run --all-files
+```
+
 ## Commit and PR conventions
 
 Releases are automated with
