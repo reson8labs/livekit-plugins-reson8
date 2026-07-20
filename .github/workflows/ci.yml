@@ -52,10 +52,12 @@ jobs:
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           enable-cache: true
+      - name: Install publish tooling
+        run: uv sync --only-group publish --locked
       - name: Build sdist and wheel
         run: uv build
       - name: Check distribution metadata
-        run: uvx twine check --strict dist/*
+        run: uv run --no-sync twine check --strict dist/*
       - name: Verify wheel ships py.typed and LICENSE
         run: |
           unzip -l dist/*.whl | grep -q 'py.typed'
