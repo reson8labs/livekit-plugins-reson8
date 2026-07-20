@@ -60,6 +60,9 @@ select = [
 [tool.mypy]
 python_version = "3.9"
 files = ["livekit/plugins/reson8"]
+mypy_path = "."
+namespace_packages = true
+explicit_package_bases = true
 strict = true
 warn_unused_ignores = true
 show_error_codes = true

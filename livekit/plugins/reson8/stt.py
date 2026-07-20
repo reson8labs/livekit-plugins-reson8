@@ -6,6 +6,7 @@ import os
 import uuid
 import weakref
 from dataclasses import dataclass, replace
+from typing import Any
 from urllib.parse import urlencode
 
 import httpx
@@ -19,6 +20,7 @@ from livekit.agents import (
     stt,
     utils,
 )
+from livekit.agents.stt import SpeechData
 from livekit.agents.types import NOT_GIVEN, NotGivenOr
 from livekit.agents.utils import is_given
 from websockets.asyncio.client import ClientConnection
@@ -64,7 +66,7 @@ class STTOptions:
         return params
 
 
-class STT(stt.STT):
+class STT(stt.STT[Any]):
     """Reson8 speech-to-text.
 
     A single model that adapts to how LiveKit uses it:
@@ -269,7 +271,7 @@ class SpeechStream(stt.RecognizeStream):
         self._speaking = False
         # the most recent turn-end candidate, promoted to a final transcript
         # once the server confirms the turn ended
-        self._candidate: stt.SpeechData | None = None
+        self._candidate: SpeechData | None = None
 
     def update_options(
         self,
@@ -338,8 +340,12 @@ class SpeechStream(stt.RecognizeStream):
             ]
             wait_reconnect = asyncio.create_task(self._reconnect_event.wait())
             try:
+                waiters: list[asyncio.Future[Any]] = [
+                    asyncio.gather(*tasks),
+                    wait_reconnect,
+                ]
                 done, _ = await asyncio.wait(
-                    [asyncio.gather(*tasks), wait_reconnect],
+                    waiters,
                     return_when=asyncio.FIRST_COMPLETED,
                 )
                 for task in done:
@@ -358,7 +364,7 @@ class SpeechStream(stt.RecognizeStream):
                 await utils.aio.gracefully_cancel(*tasks, wait_reconnect)
                 await ws.close()
 
-    def _process_message(self, msg: dict) -> None:
+    def _process_message(self, msg: dict[str, Any]) -> None:
         msg_type = msg.get("type")
 
         if msg_type == "turn_start":
