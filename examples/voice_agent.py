@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli
 from livekit.agents.voice import VoiceAgent
+
 from livekit.plugins import openai, reson8
 
 load_dotenv()

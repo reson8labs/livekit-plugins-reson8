@@ -6,13 +6,11 @@ import os
 import uuid
 import weakref
 from dataclasses import dataclass, replace
+from typing import Any
 from urllib.parse import urlencode
 
 import httpx
 import websockets
-from websockets.asyncio.client import ClientConnection
-
-from livekit import rtc
 from livekit.agents import (
     DEFAULT_API_CONNECT_OPTIONS,
     APIConnectionError,
@@ -22,8 +20,12 @@ from livekit.agents import (
     stt,
     utils,
 )
+from livekit.agents.stt import SpeechData
 from livekit.agents.types import NOT_GIVEN, NotGivenOr
 from livekit.agents.utils import is_given
+from websockets.asyncio.client import ClientConnection
+
+from livekit import rtc
 
 from ._utils import DEFAULT_API_URL, auth_headers, build_speech_data, to_ws_base
 
@@ -64,7 +66,7 @@ class STTOptions:
         return params
 
 
-class STT(stt.STT):
+class STT(stt.STT[Any]):
     """Reson8 speech-to-text.
 
     A single model that adapts to how LiveKit uses it:
@@ -214,7 +216,11 @@ class STT(stt.STT):
         opts.sample_rate = frames.sample_rate
         opts.channels = frames.num_channels
 
-        url = f"{self._api_url}/v1/speech-to-text/prerecorded?{urlencode(opts.query_params(streaming=False))}"
+        url = (
+            f"{self._api_url}/v1/speech-to-text/prerecorded?"
+            + f"{urlencode(opts.query_params(streaming=False))}"
+        )
+
         try:
             async with httpx.AsyncClient(timeout=conn_options.timeout) as client:
                 resp = await client.post(
@@ -265,7 +271,7 @@ class SpeechStream(stt.RecognizeStream):
         self._speaking = False
         # the most recent turn-end candidate, promoted to a final transcript
         # once the server confirms the turn ended
-        self._candidate: stt.SpeechData | None = None
+        self._candidate: SpeechData | None = None
 
     def update_options(
         self,
@@ -290,7 +296,9 @@ class SpeechStream(stt.RecognizeStream):
 
     def _build_url(self) -> str:
         base = to_ws_base(self._api_url)
-        return f"{base}/v1/speech-to-text/turns?{urlencode(self._opts.query_params(streaming=True))}"
+        return (
+            f"{base}/v1/speech-to-text/turns?{urlencode(self._opts.query_params(streaming=True))}"
+        )
 
     async def _run(self) -> None:
         closing = False
@@ -332,8 +340,12 @@ class SpeechStream(stt.RecognizeStream):
             ]
             wait_reconnect = asyncio.create_task(self._reconnect_event.wait())
             try:
+                waiters: list[asyncio.Future[Any]] = [
+                    asyncio.gather(*tasks),
+                    wait_reconnect,
+                ]
                 done, _ = await asyncio.wait(
-                    [asyncio.gather(*tasks), wait_reconnect],
+                    waiters,
                     return_when=asyncio.FIRST_COMPLETED,
                 )
                 for task in done:
@@ -352,7 +364,7 @@ class SpeechStream(stt.RecognizeStream):
                 await utils.aio.gracefully_cancel(*tasks, wait_reconnect)
                 await ws.close()
 
-    def _process_message(self, msg: dict) -> None:
+    def _process_message(self, msg: dict[str, Any]) -> None:
         msg_type = msg.get("type")
 
         if msg_type == "turn_start":
@@ -394,9 +406,7 @@ class SpeechStream(stt.RecognizeStream):
                 )
             if self._speaking:
                 self._speaking = False
-                self._event_ch.send_nowait(
-                    stt.SpeechEvent(type=stt.SpeechEventType.END_OF_SPEECH)
-                )
+                self._event_ch.send_nowait(stt.SpeechEvent(type=stt.SpeechEventType.END_OF_SPEECH))
 
     def _start_speaking(self) -> None:
         if self._speaking:

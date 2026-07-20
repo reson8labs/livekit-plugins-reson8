@@ -88,3 +88,20 @@ cp .env.example .env
 # Fill in your keys
 python examples/voice_agent.py dev
 ```
+
+## Development
+
+We use [uv](https://docs.astral.sh/uv/getting-started/installation/) to manage
+the environment and dev dependencies, so you'll need to have it installed.
+
+`uv sync` sets everything up — it reads the pinned Python  version from
+`.python-version`, creates a `.venv/`, and installs the dev tools (Ruff and mypy).
+
+Run the tooling through `uv run`, which uses the project environment without you
+having to activate anything:
+
+```bash
+uv run ruff check .    # lint
+uv run ruff format .   # format
+uv run mypy            # type-check
+```

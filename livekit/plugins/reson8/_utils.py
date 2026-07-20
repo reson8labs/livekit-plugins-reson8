@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from typing import Any
 
 from livekit.agents import stt
 from livekit.agents.types import NOT_GIVEN, NotGivenOr, TimedString
@@ -30,17 +31,18 @@ def _to_probability(log_prob: float | None) -> NotGivenOr[float]:
         return 1.0
 
 
-def _word_time(word: dict, key: str, *, offset: float) -> NotGivenOr[float]:
+def _word_time(word: dict[str, Any], key: str, *, offset: float) -> NotGivenOr[float]:
     if "start_ms" not in word:
         return NOT_GIVEN
-    start = word.get("start_ms", 0)
+    start: float = word.get("start_ms", 0)
     if key == "start":
         return offset + start / 1000.0
-    return offset + (start + word.get("duration_ms", 0)) / 1000.0
+    duration: float = word.get("duration_ms", 0)
+    return offset + (start + duration) / 1000.0
 
 
 def build_speech_data(
-    msg: dict,
+    msg: dict[str, Any],
     *,
     language: str | None,
     start_time_offset: float = 0.0,
@@ -63,8 +65,8 @@ def build_speech_data(
     ]
 
     word_probs = [_to_probability(w.get("confidence")) for w in raw_words if "confidence" in w]
-    word_probs = [p for p in word_probs if isinstance(p, float)]
-    confidence = sum(word_probs) / len(word_probs) if word_probs else 1.0
+    numeric_probs = [p for p in word_probs if isinstance(p, float)]
+    confidence = sum(numeric_probs) / len(numeric_probs) if numeric_probs else 1.0
 
     start_ms = msg.get("start_ms")
     duration_ms = msg.get("duration_ms") or 0
