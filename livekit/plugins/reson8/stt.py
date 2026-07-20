@@ -10,9 +10,6 @@ from urllib.parse import urlencode
 
 import httpx
 import websockets
-from websockets.asyncio.client import ClientConnection
-
-from livekit import rtc
 from livekit.agents import (
     DEFAULT_API_CONNECT_OPTIONS,
     APIConnectionError,
@@ -24,6 +21,9 @@ from livekit.agents import (
 )
 from livekit.agents.types import NOT_GIVEN, NotGivenOr
 from livekit.agents.utils import is_given
+from websockets.asyncio.client import ClientConnection
+
+from livekit import rtc
 
 from ._utils import DEFAULT_API_URL, auth_headers, build_speech_data, to_ws_base
 
@@ -214,7 +214,11 @@ class STT(stt.STT):
         opts.sample_rate = frames.sample_rate
         opts.channels = frames.num_channels
 
-        url = f"{self._api_url}/v1/speech-to-text/prerecorded?{urlencode(opts.query_params(streaming=False))}"
+        url = (
+            f"{self._api_url}/v1/speech-to-text/prerecorded?"
+            + f"{urlencode(opts.query_params(streaming=False))}"
+        )
+
         try:
             async with httpx.AsyncClient(timeout=conn_options.timeout) as client:
                 resp = await client.post(
@@ -290,7 +294,9 @@ class SpeechStream(stt.RecognizeStream):
 
     def _build_url(self) -> str:
         base = to_ws_base(self._api_url)
-        return f"{base}/v1/speech-to-text/turns?{urlencode(self._opts.query_params(streaming=True))}"
+        return (
+            f"{base}/v1/speech-to-text/turns?{urlencode(self._opts.query_params(streaming=True))}"
+        )
 
     async def _run(self) -> None:
         closing = False
@@ -394,9 +400,7 @@ class SpeechStream(stt.RecognizeStream):
                 )
             if self._speaking:
                 self._speaking = False
-                self._event_ch.send_nowait(
-                    stt.SpeechEvent(type=stt.SpeechEventType.END_OF_SPEECH)
-                )
+                self._event_ch.send_nowait(stt.SpeechEvent(type=stt.SpeechEventType.END_OF_SPEECH))
 
     def _start_speaking(self) -> None:
         if self._speaking:
