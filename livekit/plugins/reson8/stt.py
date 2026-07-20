@@ -28,6 +28,7 @@ from websockets.asyncio.client import ClientConnection
 from livekit import rtc
 
 from ._utils import DEFAULT_API_URL, auth_headers, build_speech_data, to_ws_base
+from .log import logger
 
 
 @dataclass
@@ -321,6 +322,7 @@ class SpeechStream(stt.RecognizeStream):
                 try:
                     msg = json.loads(raw)
                 except (ValueError, TypeError):
+                    logger.warning("ignoring unparseable Reson8 message: %r", raw)
                     continue
                 self._process_message(msg)
 
@@ -354,6 +356,7 @@ class SpeechStream(stt.RecognizeStream):
 
                 if wait_reconnect.done() and not closing:
                     self._reconnect_event.clear()
+                    logger.debug("reconnecting to Reson8 to apply updated options")
                     continue
                 break
             except websockets.ConnectionClosedError as e:
@@ -407,6 +410,9 @@ class SpeechStream(stt.RecognizeStream):
             if self._speaking:
                 self._speaking = False
                 self._event_ch.send_nowait(stt.SpeechEvent(type=stt.SpeechEventType.END_OF_SPEECH))
+
+        else:
+            logger.debug("ignoring unhandled Reson8 message type: %r", msg_type)
 
     def _start_speaking(self) -> None:
         if self._speaking:
