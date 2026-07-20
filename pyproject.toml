@@ -9,7 +9,7 @@ readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Reson8 team" }]
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 keywords = ["livekit", "agents", "stt", "reson8", "speech-to-text"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -41,11 +41,17 @@ packages = ["livekit"]
 dev = [
     "ruff>=0.9",
     "mypy>=1.14",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = [
@@ -61,7 +67,7 @@ select = [
 ]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.11"
 files = ["livekit/plugins/reson8"]
 mypy_path = "."
 namespace_packages = true

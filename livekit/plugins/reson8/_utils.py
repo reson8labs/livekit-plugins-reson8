@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from livekit.agents import stt
+from livekit.agents import LanguageCode, stt
 from livekit.agents.types import NOT_GIVEN, NotGivenOr, TimedString
 
 DEFAULT_API_URL = "https://api.reson8.dev"
@@ -78,7 +78,7 @@ def build_speech_data(
         end_time = start_time_offset
 
     return stt.SpeechData(
-        language=msg.get("language") or language or "",
+        language=LanguageCode(msg.get("language") or language or ""),
         text=msg.get("text", ""),
         start_time=start_time,
         end_time=end_time,
