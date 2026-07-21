@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/reson8labs/livekit-plugins-reson8/compare/livekit-plugins-reson8-v0.2.1...livekit-plugins-reson8-v0.2.2) (2026-07-21)
+
+
+### Features
+
+* Support Multiple Languages in Speech-to-Text Flow ([#9](https://github.com/reson8labs/livekit-plugins-reson8/issues/9)) ([0e8c738](https://github.com/reson8labs/livekit-plugins-reson8/commit/0e8c73886ce88d5fb00a1d6bb65a41649e460237))
+
 ## [0.2.1](https://github.com/reson8labs/livekit-plugins-reson8/compare/livekit-plugins-reson8-v0.2.0...livekit-plugins-reson8-v0.2.1) (2026-07-21)
 
 
