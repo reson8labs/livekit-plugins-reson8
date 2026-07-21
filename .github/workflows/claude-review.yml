@@ -29,17 +29,18 @@ jobs:
             Review only the lines changed in this PR; don't critique pre-existing code.
 
             Focus areas:
-            1. Correctness — logic errors, edge cases, and races, especially in the
+            1. Correctness - logic errors, edge cases, and races, especially in the
                streaming/turn state machine and the async reconnect handling.
-            2. Security — API-key/auth handling and anything touching credentials or the
+            2. Security - API-key/auth handling and anything touching credentials or the
                HTTP/websocket flow.
-            3. Public API & packaging — regressions in exported symbols, __version__,
+            3. Public API & packaging - regressions in exported symbols, __version__,
                py.typed, or pyproject metadata that would affect published consumers.
-            4. Tests — missing coverage or untested edge cases for new behavior.
+            4. Tests - missing coverage or untested edge cases for new behavior.
 
             Before reporting an issue, verify it by reading the actual file — never guess
             line numbers or comment on files outside the diff. If you can't verify it,
-            don't raise it.
+            don't raise it. Every comment must include a concrete, actionable fix not just
+            a description of the issue.
 
             Post inline comments on specific lines, each prefixed critical /
             suggestion / nit. Follow any conventions in CLAUDE.md. If the PR looks
