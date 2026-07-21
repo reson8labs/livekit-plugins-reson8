@@ -12,18 +12,34 @@ A single `reson8.STT` class that adapts to how LiveKit uses it:
 - **Batch** (`recognize()`) transcribes pre-recorded audio and returns the full
   transcript.
 
-## Any language
+## Languages
 
-Reson8 supports **any language**. Leave `language` unset to **auto-detect** the
-spoken language, or pass any language code (e.g. `"en"`, `"nl"`, `"es"`,
-`"de"`, `"fr"`, ...) to pin it.
+Leave `language` unset to **auto-detect** the spoken language, or pin recognition
+to one or more supported codes. You can pass a single code, a comma-string, or a
+list — a list is normalized to Reson8's comma-joined form and any unsupported code
+raises `ValueError` locally.
 
 ```python
-reson8.STT()                 # auto-detects the spoken language
-reson8.STT(language="en")    # English
-reson8.STT(language="es")    # Spanish
-reson8.STT(language="nl")    # Dutch
+reson8.STT()                        # auto-detects the spoken language
+reson8.STT(language="en")           # English only
+reson8.STT(language="nl,de")        # Dutch or German
+reson8.STT(language=["nl", "de"])   # same, as a list
 ```
+
+Supported languages (`reson8.SupportedLanguages`):
+
+| Code | Language |
+|---|---|
+| `de` | German |
+| `en` | English |
+| `es` | Spanish |
+| `fr` | French |
+| `fy` | Frisian |
+| `it` | Italian |
+| `nl` | Dutch |
+| `pl` | Polish |
+| `pt` | Portuguese |
+| `sv` | Swedish |
 
 ## Installation
 
@@ -38,7 +54,7 @@ from livekit.plugins import reson8
 
 stt = reson8.STT(
     api_key="your-api-key",   # or set RESON8_API_KEY
-    # language is auto-detected when omitted; pass any code to pin it
+    # language is auto-detected when omitted; pass one or more supported codes to pin it
 )
 ```
 
@@ -49,7 +65,7 @@ from livekit.agents.voice import VoiceAgent
 from livekit.plugins import openai, reson8
 
 agent = VoiceAgent(
-    stt=reson8.STT(),          # streaming + turn detection, any language
+    stt=reson8.STT(),          # streaming + turn detection, language auto-detected
     llm=openai.LLM(),
     tts=openai.TTS(),
 )
@@ -68,7 +84,7 @@ print(event.alternatives[0].text)
 |---|---|---|
 | `api_key` | `RESON8_API_KEY` | *required* |
 | `api_url` | `RESON8_API_URL` | `https://api.reson8.dev` |
-| `language` | — | `None` (auto-detect; accepts any language code) |
+| `language` | — | `None` (auto-detect; one or more of `SupportedLanguages`, e.g. `"nl,de"` or `["nl", "de"]`) |
 | `sample_rate` | — | `16000` |
 | `encoding` | — | `"pcm_s16le"` |
 | `channels` | — | `1` |
