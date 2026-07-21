@@ -17,6 +17,7 @@ permissions:
 jobs:
   review:
     name: Claude code review
+    if: ${{ github.event.pull_request.user.type != 'Bot' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
