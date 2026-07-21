@@ -6,7 +6,6 @@
 ### Features
 
 * Add dev tooling and clean up packaging ([aeb18db](https://github.com/reson8labs/livekit-plugins-reson8/commit/aeb18db8327e2b85dd87f4dc29ccd62bd02bbd90))
-* Add dev tooling and clean up packaging ([aeb18db](https://github.com/reson8labs/livekit-plugins-reson8/commit/aeb18db8327e2b85dd87f4dc29ccd62bd02bbd90))
 * CI workflow ([2ac3bac](https://github.com/reson8labs/livekit-plugins-reson8/commit/2ac3bac63f72f059156547582432e5bc4ab1891d))
 * Claude Code Review CI Workflow ([#7](https://github.com/reson8labs/livekit-plugins-reson8/issues/7)) ([6b2781d](https://github.com/reson8labs/livekit-plugins-reson8/commit/6b2781d168ae2c62a7ee944f4c52800e4bdbf6ef))
 * formatting ([824781f](https://github.com/reson8labs/livekit-plugins-reson8/commit/824781f3970ff14c6c3bd8a78892e9ccf112fa60))
