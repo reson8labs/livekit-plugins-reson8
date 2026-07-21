@@ -5,6 +5,7 @@ import json
 import os
 import uuid
 import weakref
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import urlencode
@@ -27,7 +28,13 @@ from websockets.asyncio.client import ClientConnection
 
 from livekit import rtc
 
-from ._utils import DEFAULT_API_URL, auth_headers, build_speech_data, to_ws_base
+from ._utils import (
+    DEFAULT_API_URL,
+    auth_headers,
+    build_speech_data,
+    normalize_languages,
+    to_ws_base,
+)
 from .log import logger
 
 
@@ -49,8 +56,8 @@ class STTOptions:
             "sample_rate": str(self.sample_rate),
             "channels": str(self.channels),
         }
-        # Any language is supported. When omitted, Reson8 auto-detects the
-        # spoken language; otherwise this pins recognition to the given code.
+        # When omitted, Reson8 auto-detects the spoken language; otherwise this
+        # pins recognition to the given code(s) (comma-joined for multiple).
         if self.language:
             params["language"] = self.language
         if self.custom_model_id:
@@ -82,8 +89,9 @@ class STT(stt.STT[Any]):
     * **Batch** (:meth:`recognize`) sends pre-recorded audio to
       ``/v1/speech-to-text/prerecorded`` and returns the full transcript.
 
-    Any language is supported. Leave ``language`` as ``None`` (the default) to
-    auto-detect the spoken language, or pass any language code to pin it.
+    Leave ``language`` as ``None`` (the default) to auto-detect the spoken
+    language, or pass one or more codes from :class:`SupportedLanguages` to pin
+    recognition.
     """
 
     def __init__(
@@ -91,7 +99,7 @@ class STT(stt.STT[Any]):
         *,
         api_key: str | None = None,
         api_url: str | None = None,
-        language: str | None = None,
+        language: str | Sequence[str] | None = None,
         sample_rate: int = 16000,
         encoding: str = "pcm_s16le",
         channels: int = 1,
@@ -106,8 +114,10 @@ class STT(stt.STT[Any]):
             api_key: Reson8 API key. Falls back to the ``RESON8_API_KEY`` env var.
             api_url: Reson8 API base URL. Falls back to ``RESON8_API_URL`` or
                 ``https://api.reson8.dev``.
-            language: Any language code (e.g. ``"en"``, ``"nl"``, ``"es"``, ...).
-                Leave as ``None`` to auto-detect the spoken language.
+            language: One or more codes from :class:`SupportedLanguages` to pin
+                recognition to. Pass a single code (``"nl"``), a comma-string
+                (``"nl,de"``), or a list (``["nl", "de"]``). Leave as ``None`` to
+                auto-detect. Raises ``ValueError`` for unsupported codes.
             sample_rate: Input sample rate in Hz.
             encoding: Audio encoding sent to Reson8.
             channels: Number of audio channels.
@@ -117,6 +127,7 @@ class STT(stt.STT[Any]):
             include_confidence: Include confidence scores (batch recognition).
             include_language: Report the detected language code (streaming).
         """
+
         super().__init__(
             capabilities=stt.STTCapabilities(
                 streaming=True,
@@ -124,15 +135,17 @@ class STT(stt.STT[Any]):
                 offline_recognize=True,
             ),
         )
+
         api_key = api_key or os.environ.get("RESON8_API_KEY")
         if not api_key:
             raise ValueError(
                 "Reson8 API key is required, either as argument or RESON8_API_KEY env var"
             )
+
         self._api_key = api_key
         self._api_url = (api_url or os.environ.get("RESON8_API_URL", DEFAULT_API_URL)).rstrip("/")
         self._opts = STTOptions(
-            language=language,
+            language=normalize_languages(language),
             sample_rate=sample_rate,
             encoding=encoding,
             channels=channels,
@@ -155,7 +168,7 @@ class STT(stt.STT[Any]):
     def update_options(
         self,
         *,
-        language: NotGivenOr[str | None] = NOT_GIVEN,
+        language: NotGivenOr[str | Sequence[str] | None] = NOT_GIVEN,
         custom_model_id: NotGivenOr[str | None] = NOT_GIVEN,
         include_timestamps: NotGivenOr[bool] = NOT_GIVEN,
         include_words: NotGivenOr[bool] = NOT_GIVEN,
@@ -163,7 +176,7 @@ class STT(stt.STT[Any]):
         include_language: NotGivenOr[bool] = NOT_GIVEN,
     ) -> None:
         if is_given(language):
-            self._opts.language = language
+            self._opts.language = normalize_languages(language)
         if is_given(custom_model_id):
             self._opts.custom_model_id = custom_model_id
         if is_given(include_timestamps):
@@ -187,12 +200,12 @@ class STT(stt.STT[Any]):
     def stream(
         self,
         *,
-        language: NotGivenOr[str] = NOT_GIVEN,
+        language: NotGivenOr[str | Sequence[str]] = NOT_GIVEN,
         conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS,
     ) -> SpeechStream:
         opts = replace(self._opts)
         if is_given(language):
-            opts.language = language
+            opts.language = normalize_languages(language)
         stream = SpeechStream(
             stt=self,
             opts=opts,
@@ -207,10 +220,10 @@ class STT(stt.STT[Any]):
         self,
         buffer: utils.AudioBuffer,
         *,
-        language: NotGivenOr[str] = NOT_GIVEN,
+        language: NotGivenOr[str | Sequence[str]] = NOT_GIVEN,
         conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS,
     ) -> stt.SpeechEvent:
-        lang = language if is_given(language) else self._opts.language
+        lang = normalize_languages(language) if is_given(language) else self._opts.language
         frames = rtc.combine_audio_frames(buffer)
 
         opts = replace(self._opts, language=lang, encoding="pcm_s16le")
@@ -277,14 +290,14 @@ class SpeechStream(stt.RecognizeStream):
     def update_options(
         self,
         *,
-        language: NotGivenOr[str | None] = NOT_GIVEN,
+        language: NotGivenOr[str | Sequence[str] | None] = NOT_GIVEN,
         custom_model_id: NotGivenOr[str | None] = NOT_GIVEN,
         include_timestamps: NotGivenOr[bool] = NOT_GIVEN,
         include_words: NotGivenOr[bool] = NOT_GIVEN,
         include_language: NotGivenOr[bool] = NOT_GIVEN,
     ) -> None:
         if is_given(language):
-            self._opts.language = language
+            self._opts.language = normalize_languages(language)
         if is_given(custom_model_id):
             self._opts.custom_model_id = custom_model_id
         if is_given(include_timestamps):
