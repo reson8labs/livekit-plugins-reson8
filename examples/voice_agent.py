@@ -11,8 +11,8 @@ async def entrypoint(ctx: JobContext):
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
     # reson8.STT streams with server-side turn detection, which keeps
-    # voice-agent responses snappy. Any language is supported: omit `language`
-    # to auto-detect, or pass any code (e.g. language="nl") to pin it.
+    # voice-agent responses snappy. Omit `language` to auto-detect, or pin it to
+    # one or more supported codes (e.g. language="nl" or language=["nl", "de"]).
     agent = VoiceAgent(
         stt=reson8.STT(),
         llm=openai.LLM(),

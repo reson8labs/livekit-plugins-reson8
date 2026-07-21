@@ -1,12 +1,63 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
+from enum import StrEnum
 from typing import Any
 
 from livekit.agents import LanguageCode, stt
 from livekit.agents.types import NOT_GIVEN, NotGivenOr, TimedString
 
 DEFAULT_API_URL = "https://api.reson8.dev"
+
+
+class SupportedLanguages(StrEnum):
+    """The languages Reson8 can recognize, valued by ISO 639-1 code.
+
+    Members are strings (``SupportedLanguages.DUTCH == "nl"``), so they can be
+    passed directly wherever a ``language`` code is accepted. Language selection
+    is validated against this enum locally, so unsupported codes fail fast
+    instead of after a round-trip to the API.
+    """
+
+    GERMAN = "de"
+    ENGLISH = "en"
+    SPANISH = "es"
+    FRENCH = "fr"
+    FRISIAN = "fy"
+    ITALIAN = "it"
+    DUTCH = "nl"
+    POLISH = "pl"
+    PORTUGUESE = "pt"
+    SWEDISH = "sv"
+
+
+def normalize_languages(value: str | Sequence[str] | None) -> str | None:
+    """Normalize and validate a language selection into Reson8's query form.
+
+    ``"nl"`` -> ``"nl"``; ``"nl,de"`` -> ``"nl,de"``; ``["nl", "de"]`` ->
+    ``"nl,de"``; ``None``/``""``/``[]`` -> ``None`` (auto-detect).
+
+    Raises ``ValueError`` if any code is not a member of :class:`SupportedLanguages`,
+    so invalid selections fail locally rather than after a request to the API.
+    """
+
+    if value is None:
+        return None
+
+    codes = value.split(",") if isinstance(value, str) else list(value)
+    codes = [c.strip().lower() for c in codes if c and c.strip()]
+    if not codes:
+        return None
+
+    unsupported = [c for c in codes if c not in set(SupportedLanguages)]
+    if unsupported:
+        supported = ", ".join(sorted(SupportedLanguages))
+        raise ValueError(
+            f"unsupported language(s): {', '.join(unsupported)}. Reson8 supports: {supported}."
+        )
+
+    return ",".join(codes)
 
 
 def to_ws_base(api_url: str) -> str:
@@ -77,8 +128,9 @@ def build_speech_data(
         start_time = start_time_offset
         end_time = start_time_offset
 
+    fallback = language if language and "," not in language else ""
     return stt.SpeechData(
-        language=LanguageCode(msg.get("language") or language or ""),
+        language=LanguageCode(msg.get("language") or fallback or ""),
         text=msg.get("text", ""),
         start_time=start_time,
         end_time=end_time,

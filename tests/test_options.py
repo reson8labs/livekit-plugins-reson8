@@ -11,6 +11,11 @@ def test_query_params_includes_language_when_set(make_opts):
     assert params["language"] == "nl"
 
 
+def test_query_params_passes_through_multiple_languages(make_opts):
+    params = make_opts(language="nl,de").query_params(streaming=True)
+    assert params["language"] == "nl,de"
+
+
 def test_query_params_omits_language_when_none(make_opts):
     params = make_opts(language=None).query_params(streaming=True)
     assert "language" not in params

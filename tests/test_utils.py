@@ -10,12 +10,37 @@ from livekit.plugins.reson8._utils import (
     _word_time,
     auth_headers,
     build_speech_data,
+    normalize_languages,
     to_ws_base,
 )
 
 
 def test_auth_headers():
     assert auth_headers("secret") == {"Authorization": "ApiKey secret"}
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, None),
+        ("", None),
+        ([], None),
+        ("nl", "nl"),
+        ("NL", "nl"),
+        ("nl,de", "nl,de"),
+        (["nl", "de"], "nl,de"),
+        (" nl , de ", "nl,de"),
+        (["nl", "", "de"], "nl,de"),
+    ],
+)
+def test_normalize_languages(value, expected):
+    assert normalize_languages(value) == expected
+
+
+@pytest.mark.parametrize("value", ["xx", "nl,xx", ["nl", "xx"], "english"])
+def test_normalize_languages_rejects_unsupported(value):
+    with pytest.raises(ValueError, match="unsupported language"):
+        normalize_languages(value)
 
 
 @pytest.mark.parametrize(
@@ -75,6 +100,18 @@ def test_build_speech_data_falls_back_to_passed_language():
 def test_build_speech_data_language_empty_when_unknown():
     data = build_speech_data({"text": "hi"}, language=None)
     assert data.language == ""
+
+
+def test_build_speech_data_multi_fallback_does_not_leak():
+    # With multiple pinned candidates there is no single dominant language to
+    # assume when the server omits one, so the comma-string must not leak.
+    data = build_speech_data({"text": "hi"}, language="nl,de")
+    assert data.language == ""
+
+
+def test_build_speech_data_server_language_wins_over_multi_fallback():
+    data = build_speech_data({"text": "hi", "language": "nl"}, language="nl,de")
+    assert data.language == "nl"
 
 
 def test_build_speech_data_start_end_from_offsets():

@@ -51,5 +51,5 @@ jobs:
             good, post a short 2-3 line approving summary and stop — don't invent
             nitpicks.
           claude_args: |
-            --max-turns 10
+            --max-turns 30
             --allowedTools "mcp__github_inline_comment__create_inline_comment"
