@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.2](https://github.com/reson8labs/livekit-plugins-reson8/compare/livekit-plugins-reson8-v0.2.1...livekit-plugins-reson8-v0.2.2) (2026-08-10)
+
+
+### Features
+
+* PyPi Publish Workflow ([#13](https://github.com/reson8labs/livekit-plugins-reson8/issues/13)) ([6fdd385](https://github.com/reson8labs/livekit-plugins-reson8/commit/6fdd385668a83d11fe2d6557a0c80d63ba5afe60))
+* Support Multiple Languages in Speech-to-Text Flow ([#9](https://github.com/reson8labs/livekit-plugins-reson8/issues/9)) ([0e8c738](https://github.com/reson8labs/livekit-plugins-reson8/commit/0e8c73886ce88d5fb00a1d6bb65a41649e460237))
+
+
+### Bug Fixes
+
+* PR Title CI Check ([#14](https://github.com/reson8labs/livekit-plugins-reson8/issues/14)) ([ed3bd60](https://github.com/reson8labs/livekit-plugins-reson8/commit/ed3bd60fb354dcee03f2fc88ccc99bc2786e11b1))
+* update example to current livekit-agents API ([#11](https://github.com/reson8labs/livekit-plugins-reson8/issues/11)) ([9698b23](https://github.com/reson8labs/livekit-plugins-reson8/commit/9698b23542d280c51dcbbdfd43b1b450d0a11b71))
+
 ## [0.2.1](https://github.com/reson8labs/livekit-plugins-reson8/compare/livekit-plugins-reson8-v0.2.0...livekit-plugins-reson8-v0.2.1) (2026-07-21)
 
 
