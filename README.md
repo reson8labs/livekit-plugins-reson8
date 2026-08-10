@@ -61,15 +61,24 @@ stt = reson8.STT(
 ### With a Voice Agent
 
 ```python
-from livekit.agents.voice import VoiceAgent
+from livekit.agents import AgentSession
 from livekit.plugins import openai, reson8
 
-agent = VoiceAgent(
+session = AgentSession(
     stt=reson8.STT(),          # streaming + turn detection, language auto-detected
     llm=openai.LLM(),
     tts=openai.TTS(),
+    # "stt" hands turn detection to Reson8 and lets the agent start
+    # generating on our preflight transcript instead of the confirmation.
+    turn_handling={
+        "turn_detection": "stt",
+        "preemptive_generation": {"enabled": True},
+    },
 )
 ```
+
+Without `turn_handling`, LiveKit runs its own turn detector and our preflight
+transcripts are ignored — set it on every `AgentSession` that uses this plugin.
 
 ### Transcribing a file
 

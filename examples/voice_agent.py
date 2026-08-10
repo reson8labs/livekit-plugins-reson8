@@ -1,26 +1,32 @@
 from dotenv import load_dotenv
-from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli
-from livekit.agents.voice import VoiceAgent
+from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
 
 from livekit.plugins import openai, reson8
 
 load_dotenv()
 
 
-async def entrypoint(ctx: JobContext):
-    await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+class Assistant(Agent):
+    def __init__(self) -> None:
+        super().__init__(instructions="Je bent een behulpzame assistent.")
 
-    # reson8.STT streams with server-side turn detection, which keeps
-    # voice-agent responses snappy. Omit `language` to auto-detect, or pin it to
-    # one or more supported codes (e.g. language="nl" or language=["nl", "de"]).
-    agent = VoiceAgent(
+    async def on_enter(self) -> None:
+        self.session.generate_reply(instructions="Begroet de gebruiker en bied je hulp aan.")
+
+
+async def entrypoint(ctx: JobContext):
+    session = AgentSession(
         stt=reson8.STT(),
         llm=openai.LLM(),
         tts=openai.TTS(),
+        # "stt" hands turn detection to Reson8 and lets the agent start
+        # generating on our preflight transcript instead of the confirmation.
+        turn_handling={
+            "turn_detection": "stt",
+            "preemptive_generation": {"enabled": True},
+        },
     )
-    agent.start(ctx.room)
-
-    await agent.say("Hallo, hoe kan ik je helpen?")
+    await session.start(agent=Assistant(), room=ctx.room)
 
 
 if __name__ == "__main__":
