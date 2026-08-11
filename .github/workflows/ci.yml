@@ -52,6 +52,8 @@ jobs:
         run: uv sync --locked
       - name: pytest
         run: uv run pytest
+        env:
+          RUN_PACKAGING_TESTS: "1"
 
   build:
     name: Build & verify package
