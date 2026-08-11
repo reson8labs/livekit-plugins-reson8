@@ -67,7 +67,7 @@ def test_wheel_installs_and_imports(wheel: Path, tmp_path: Path) -> None:
 
     # cwd is the temp dir, so the import can only resolve to the venv, never to ./livekit.
     result = _run(python, "-c", _SMOKE, *reson8.__all__, cwd=tmp_path)
-    installed = json.loads(result.stdout)
+    installed = json.loads(result.stdout.strip().splitlines()[-1])
     installed_path = Path(installed["path"])
 
     assert installed_path.is_relative_to(venv_dir), (
