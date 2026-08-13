@@ -110,7 +110,7 @@ reconnect automatically to apply them.
 
 ## Turn detection
 
-Reson8 decides turn boundaries by confidence it emits the preflight transcript
+Reson8 decides turn boundaries by confidence: it emits the preflight transcript
 at `eager_turn_probability` and commits the turn at `final_turn_probability`.
 Lower `final_turn_probability` to commit sooner, at the risk of cutting off
 longer utterances.
