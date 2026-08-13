@@ -1,10 +1,3 @@
-"""Turn-tuning params and on-demand flush.
-
-The turn thresholds decide how long the server waits before committing a turn,
-which is the dominant latency on short confirmations, so these assert the values
-actually reach the query string rather than being silently dropped.
-"""
-
 from __future__ import annotations
 
 import asyncio
