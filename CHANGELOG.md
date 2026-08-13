@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/reson8labs/livekit-plugins-reson8/compare/livekit-plugins-reson8-v0.2.2...livekit-plugins-reson8-v0.2.3) (2026-08-13)
+
+
+### Features
+
+* expose turn tuning params and forward flush requests ([#16](https://github.com/reson8labs/livekit-plugins-reson8/issues/16)) ([4ce22cb](https://github.com/reson8labs/livekit-plugins-reson8/commit/4ce22cb6678ee2462418baecb9e687c67f19b4c3))
+
 ## [0.2.2](https://github.com/reson8labs/livekit-plugins-reson8/compare/livekit-plugins-reson8-v0.2.1...livekit-plugins-reson8-v0.2.2) (2026-08-10)
 
 
