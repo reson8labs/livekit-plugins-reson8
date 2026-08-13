@@ -6,8 +6,8 @@ import os
 import uuid
 import weakref
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
-from typing import Any
+from dataclasses import dataclass, field, replace
+from typing import Any, ClassVar
 from urllib.parse import urlencode
 
 import httpx
@@ -38,6 +38,59 @@ from ._utils import (
 from .log import logger
 
 
+def _check_probability(name: str, value: float | None) -> None:
+    if value is not None and not 0.0 <= value <= 1.0:
+        raise ValueError(f"{name} must be between 0 and 1, got {value}")
+
+
+def _check_turn_thresholds(eager: float, final: float) -> None:
+    if eager > final:
+        raise ValueError(
+            f"eager_turn_probability ({eager}) must be below "
+            f"final_turn_probability ({final}); raise final_turn_probability "
+            f"or lower eager_turn_probability"
+        )
+    if eager == final:
+        logger.warning(
+            "eager_turn_probability and final_turn_probability are both %s, so the "
+            "turn commits on the same event as the preflight transcript and "
+            "preemptive generation gets no lead time",
+            final,
+        )
+
+
+@dataclass(frozen=True)
+class TurnOptions:
+    """``None`` leaves the server's default. Frozen: ``STT.stream`` shallow-copies
+    the options, so a mutable section would be shared by every live stream."""
+
+    # /turns does not report its effective config, so the defaults are mirrored
+    # here to check one threshold when only the other is set. Keep in sync with
+    # https://docs.reson8.dev/api/speech-to-text/turns/
+    SERVER_DEFAULT_EAGER: ClassVar[float] = 0.5
+    SERVER_DEFAULT_FINAL: ClassVar[float] = 0.92
+
+    eager_turn_probability: float | None = None
+    final_turn_probability: float | None = None
+
+    def __post_init__(self) -> None:
+        eager, final = self.eager_turn_probability, self.final_turn_probability
+        _check_probability("eager_turn_probability", eager)
+        _check_probability("final_turn_probability", final)
+        _check_turn_thresholds(
+            self.SERVER_DEFAULT_EAGER if eager is None else eager,
+            self.SERVER_DEFAULT_FINAL if final is None else final,
+        )
+
+    def query_params(self) -> dict[str, str]:
+        params: dict[str, str] = {}
+        if self.eager_turn_probability is not None:
+            params["eager_turn_probability"] = str(self.eager_turn_probability)
+        if self.final_turn_probability is not None:
+            params["final_turn_probability"] = str(self.final_turn_probability)
+        return params
+
+
 @dataclass
 class STTOptions:
     language: str | None
@@ -49,6 +102,7 @@ class STTOptions:
     include_words: bool
     include_confidence: bool
     include_language: bool
+    turn: TurnOptions = field(default_factory=TurnOptions)
 
     def query_params(self, *, streaming: bool) -> dict[str, str]:
         params: dict[str, str] = {
@@ -69,6 +123,7 @@ class STTOptions:
         if streaming:
             if self.include_language:
                 params["include_language"] = "true"
+            params.update(self.turn.query_params())
         elif self.include_confidence:
             params["include_confidence"] = "true"
         return params
@@ -92,6 +147,20 @@ class STT(stt.STT[Any]):
     Leave ``language`` as ``None`` (the default) to auto-detect the spoken
     language, or pass one or more codes from :class:`SupportedLanguages` to pin
     recognition.
+
+    ``eager_turn_probability`` and ``final_turn_probability`` are the main lever
+    on end-of-turn latency, and :meth:`SpeechStream.flush` commits a turn on
+    demand without touching either::
+
+        # the server's 0.92 default is tuned for conversational speech and is
+        # slow to commit a one-word answer
+        stt = reson8.STT(language="es", final_turn_probability=0.7)
+
+        # or leave it alone and commit when you already know they are done
+        stream = stt.stream()
+        stream.flush()
+
+    See https://docs.reson8.dev/api/speech-to-text/turns/
     """
 
     def __init__(
@@ -108,6 +177,8 @@ class STT(stt.STT[Any]):
         include_words: bool = False,
         include_confidence: bool = False,
         include_language: bool = False,
+        eager_turn_probability: float | None = None,
+        final_turn_probability: float | None = None,
     ) -> None:
         """
         Args:
@@ -126,6 +197,11 @@ class STT(stt.STT[Any]):
             include_words: Include word-level results.
             include_confidence: Include confidence scores (batch recognition).
             include_language: Report the detected language code (streaming).
+            eager_turn_probability: Confidence (0-1) at which the preflight
+                transcript is emitted. Server default ``0.5``.
+            final_turn_probability: Confidence (0-1) at which the turn commits.
+                Server default ``0.92``, tuned for conversational speech; a
+                one-word confirmation can take over a second to cross it.
         """
 
         super().__init__(
@@ -154,6 +230,10 @@ class STT(stt.STT[Any]):
             include_words=include_words,
             include_confidence=include_confidence,
             include_language=include_language,
+            turn=TurnOptions(
+                eager_turn_probability=eager_turn_probability,
+                final_turn_probability=final_turn_probability,
+            ),
         )
         self._streams = weakref.WeakSet[SpeechStream]()
 
@@ -321,8 +401,8 @@ class SpeechStream(stt.RecognizeStream):
             async for data in self._input_ch:
                 if isinstance(data, rtc.AudioFrame):
                     await ws.send(data.data.tobytes())
-                # turn boundaries are detected server-side; flush sentinels are
-                # not part of the turns protocol and are intentionally ignored.
+                elif isinstance(data, self._FlushSentinel):
+                    await ws.send(json.dumps({"type": "flush_request"}))
 
             nonlocal closing
             closing = True

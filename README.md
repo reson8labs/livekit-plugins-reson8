@@ -77,8 +77,8 @@ session = AgentSession(
 )
 ```
 
-Without `turn_handling`, LiveKit runs its own turn detector and our preflight
-transcripts are ignored — set it on every `AgentSession` that uses this plugin.
+By default LiveKit runs its own turn detector. Set `turn_handling` as above to
+hand turn-taking to Reson8 instead.
 
 ### Transcribing a file
 
@@ -102,9 +102,24 @@ print(event.alternatives[0].text)
 | `include_words` | — | `False` |
 | `include_confidence` | — | `False` (batch recognition) |
 | `include_language` | — | `False` (report detected language while streaming) |
+| `eager_turn_probability` | — | `None` (server default `0.5`) |
+| `final_turn_probability` | — | `None` (server default `0.92`) |
 
 `STT.update_options(...)` changes settings at runtime; active streaming sessions
 reconnect automatically to apply them.
+
+## Turn detection
+
+Reson8 decides turn boundaries by confidence: it emits the preflight transcript
+at `eager_turn_probability` and commits the turn at `final_turn_probability`.
+Lower `final_turn_probability` to commit sooner, at the risk of cutting off
+longer utterances.
+
+`flush()` commits the current turn immediately, keeping `final_turn_probability`
+intact. LiveKit never calls it for you.
+
+See [Turns](https://docs.reson8.dev/documentation/speech-to-text/turns/) for how
+turn events work server-side.
 
 ## Running the example
 
