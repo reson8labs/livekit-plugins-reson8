@@ -402,8 +402,6 @@ class SpeechStream(stt.RecognizeStream):
                 if isinstance(data, rtc.AudioFrame):
                     await ws.send(data.data.tobytes())
                 elif isinstance(data, self._FlushSentinel):
-                    # commits the turn now, for callers that already know the
-                    # speaker is done and need not wait out the threshold
                     await ws.send(json.dumps({"type": "flush_request"}))
 
             nonlocal closing
