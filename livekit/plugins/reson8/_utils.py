@@ -8,7 +8,11 @@ from typing import Any
 from livekit.agents import LanguageCode, stt
 from livekit.agents.types import NOT_GIVEN, NotGivenOr, TimedString
 
+from .version import __version__
+
 DEFAULT_API_URL = "https://api.reson8.dev"
+INTEGRATION_HEADER = "X-Reson8-Integration"
+INTEGRATION_NAME = "livekit"
 
 
 class SupportedLanguages(StrEnum):
@@ -67,6 +71,10 @@ def to_ws_base(api_url: str) -> str:
 
 def auth_headers(api_key: str) -> dict[str, str]:
     return {"Authorization": f"ApiKey {api_key}"}
+
+
+def integration_headers() -> dict[str, str]:
+    return {INTEGRATION_HEADER: f"{INTEGRATION_NAME}:{__version__}"}
 
 
 def _to_probability(log_prob: float | None) -> NotGivenOr[float]:

@@ -32,6 +32,7 @@ from ._utils import (
     DEFAULT_API_URL,
     auth_headers,
     build_speech_data,
+    integration_headers,
     normalize_languages,
     to_ws_base,
 )
@@ -322,6 +323,7 @@ class STT(stt.STT[Any]):
                     content=frames.data.tobytes(),
                     headers={
                         **auth_headers(self._api_key),
+                        **integration_headers(),
                         "Content-Type": "application/octet-stream",
                     },
                 )
@@ -423,7 +425,10 @@ class SpeechStream(stt.RecognizeStream):
             try:
                 ws = await websockets.connect(
                     self._build_url(),
-                    additional_headers=auth_headers(self._api_key),
+                    additional_headers={
+                        **auth_headers(self._api_key),
+                        **integration_headers(),
+                    },
                 )
             except (websockets.InvalidStatus, websockets.InvalidHandshake, OSError) as e:
                 raise APIConnectionError("failed to connect to Reson8") from e
