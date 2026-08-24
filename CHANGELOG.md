@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/reson8labs/livekit-plugins-reson8/compare/livekit-plugins-reson8-v0.2.3...livekit-plugins-reson8-v0.2.4) (2026-08-24)
+
+
+### Features
+
+* Introduce Custom Header to Track Plugin Version ([#18](https://github.com/reson8labs/livekit-plugins-reson8/issues/18)) ([bd7e677](https://github.com/reson8labs/livekit-plugins-reson8/commit/bd7e6776de00153e5938c213670f611eb63867fc))
+
 ## [0.2.3](https://github.com/reson8labs/livekit-plugins-reson8/compare/livekit-plugins-reson8-v0.2.2...livekit-plugins-reson8-v0.2.3) (2026-08-13)
 
 
