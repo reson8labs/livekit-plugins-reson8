@@ -1,0 +1,58 @@
+name: TS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to check out and verify. Defaults to the triggering ref.
+        type: string
+        required: false
+
+defaults:
+  run:
+    working-directory: ts
+
+jobs:
+  build:
+    name: Type-check & build (node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["22", "24"]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: ts/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Type-check
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      # These are the four files package.json's "exports" map promises.
+      # A miss here means the published exports map is lying, not that the
+      # assertion is wrong.
+      - name: Verify build output matches the exports map
+        run: |
+          test -f dist/index.js
+          test -f dist/index.cjs
+          test -f dist/index.d.ts
+          test -f dist/index.d.cts
+      - name: Smoke-test both module formats
+        run: |
+          node --input-type=module -e "import * as r from './dist/index.js'; if (!r.STT) throw new Error('ESM entry missing STT')"
+          node --input-type=commonjs -e "const r = require('./dist/index.cjs'); if (!r.STT) throw new Error('CJS entry missing STT')"
+      - name: Lint published package layout
+        run: npx --yes publint@0.3.24 --strict
+      - name: Check type resolution across module systems
+        run: npx --yes @arethetypeswrong/cli@0.18.5 --pack .

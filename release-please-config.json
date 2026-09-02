@@ -12,6 +12,9 @@
           "type": "generic",
           "path": "livekit/plugins/reson8/version.py"
         }
+      ],
+      "exclude-paths": [
+        "ts"
       ]
     }
   }
