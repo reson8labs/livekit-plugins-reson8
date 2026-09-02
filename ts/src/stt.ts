@@ -4,6 +4,7 @@ import {
   APITimeoutError,
   type APIConnectOptions,
   type AudioBuffer,
+  log,
   mergeFrames,
   stt,
 } from '@livekit/agents';
@@ -18,6 +19,56 @@ import {
   toWsBase,
 } from './utils.js';
 
+const SERVER_DEFAULT_EAGER_TURN_PROBABILITY = 0.5;
+const SERVER_DEFAULT_FINAL_TURN_PROBABILITY = 0.92;
+
+/** Reson8's two turn-boundary confidence thresholds. */
+export interface TurnOptions {
+  /**
+   * Confidence (0-1) at which the preflight transcript is emitted. Server
+   * default `0.5`.
+   */
+  eagerTurnProbability?: number;
+  /**
+   * Confidence (0-1) at which the turn commits. Server default `0.92`, tuned
+   * for conversational speech; a one-word confirmation can take over a second
+   * to cross it.
+   */
+  finalTurnProbability?: number;
+}
+
+function checkProbability(name: string, value: number | undefined): void {
+  if (value === undefined) return;
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error(`${name} must be between 0 and 1, got ${value}`);
+  }
+}
+
+function validateTurnOptions(turn: TurnOptions): void {
+  checkProbability('eagerTurnProbability', turn.eagerTurnProbability);
+  checkProbability('finalTurnProbability', turn.finalTurnProbability);
+
+  const eager = turn.eagerTurnProbability ?? SERVER_DEFAULT_EAGER_TURN_PROBABILITY;
+  const final = turn.finalTurnProbability ?? SERVER_DEFAULT_FINAL_TURN_PROBABILITY;
+
+  if (eager > final) {
+    throw new Error(
+      `eagerTurnProbability (${eager}) must be below finalTurnProbability (${final}); ` +
+        'raise finalTurnProbability or lower eagerTurnProbability',
+    );
+  }
+  if (eager === final) {
+    log().warn(
+      `eagerTurnProbability and finalTurnProbability are both ${final}, so the turn commits ` +
+        'on the same event as the preflight transcript and preemptive generation gets no lead time',
+    );
+  }
+}
+
+function formatProbability(value: number): string {
+  return Number.isInteger(value) ? value.toFixed(1) : String(value);
+}
+
 /** Resolved Reson8 STT options shared by the {@link STT} and {@link SpeechStream}. */
 export interface STTOptions {
   language: string | null;
@@ -29,6 +80,7 @@ export interface STTOptions {
   includeWords: boolean;
   includeConfidence: boolean;
   includeLanguage: boolean;
+  turn: TurnOptions;
 }
 
 /** Options accepted by the {@link STT} constructor. */
@@ -58,6 +110,16 @@ export interface STTConstructorOptions {
   includeConfidence?: boolean;
   /** Report the detected language code (streaming). */
   includeLanguage?: boolean;
+  /**
+   * Confidence (0-1) at which the preflight transcript is emitted. Server
+   * default `0.5`. Must be below {@link finalTurnProbability}.
+   */
+  eagerTurnProbability?: number;
+  /**
+   * Confidence (0-1) at which the turn commits. Server default `0.92`. Lower it
+   * to commit sooner, at the risk of cutting off longer utterances.
+   */
+  finalTurnProbability?: number;
 }
 
 /** Options that may be changed at runtime via `updateOptions`. */
@@ -87,6 +149,14 @@ function queryParams(opts: STTOptions, { streaming }: { streaming: boolean }): U
   if (opts.includeWords) params.set('include_words', 'true');
   if (streaming) {
     if (opts.includeLanguage) params.set('include_language', 'true');
+
+    const { eagerTurnProbability, finalTurnProbability } = opts.turn;
+    if (eagerTurnProbability !== undefined) {
+      params.set('eager_turn_probability', formatProbability(eagerTurnProbability));
+    }
+    if (finalTurnProbability !== undefined) {
+      params.set('final_turn_probability', formatProbability(finalTurnProbability));
+    }
   } else if (opts.includeConfidence) {
     params.set('include_confidence', 'true');
   }
@@ -143,7 +213,17 @@ export class STT extends stt.STT {
       includeWords: opts.includeWords ?? false,
       includeConfidence: opts.includeConfidence ?? false,
       includeLanguage: opts.includeLanguage ?? false,
+      turn: {
+        ...(opts.eagerTurnProbability !== undefined && {
+          eagerTurnProbability: opts.eagerTurnProbability,
+        }),
+        ...(opts.finalTurnProbability !== undefined && {
+          finalTurnProbability: opts.finalTurnProbability,
+        }),
+      },
     };
+
+    validateTurnOptions(this.#opts.turn);
   }
 
   override get model(): string {
@@ -173,7 +253,7 @@ export class STT extends stt.STT {
   }
 
   stream(options?: { language?: string; connOptions?: APIConnectOptions }): SpeechStream {
-    const opts: STTOptions = { ...this.#opts };
+    const opts: STTOptions = { ...this.#opts, turn: { ...this.#opts.turn } };
     if (options?.language !== undefined) opts.language = options.language;
     const stream = new SpeechStream(
       this,
@@ -293,8 +373,22 @@ export class SpeechStream extends stt.SpeechStream {
     return `${base}/v1/speech-to-text/turns?${queryParams(this.#opts, { streaming: true })}`;
   }
 
+  readonly #onMessage = (raw: RawData, isBinary: boolean): void => {
+    if (isBinary) return;
+
+    let msg: Reson8Transcript;
+    try {
+      msg = JSON.parse(raw.toString()) as Reson8Transcript;
+    } catch {
+      return;
+    }
+
+    this.#processMessage(msg);
+  };
+
   async #connect(): Promise<WebSocket> {
     const ws = new WebSocket(this.#buildUrl(), { headers: authHeaders(this.#apiKey) });
+    ws.on('message', this.#onMessage);
     await new Promise<void>((resolve, reject) => {
       const cleanup = () => {
         ws.off('open', onOpen);
@@ -331,23 +425,13 @@ export class SpeechStream extends stt.SpeechStream {
       this.#connAbort = connAbort;
       if (this.#reconnectRequested) {
         this.#connAbort = null;
+        ws.off('message', this.#onMessage);
         ws.close();
         continue;
       }
       let closing = false;
       let unexpected = false;
 
-      const onMessage = (raw: RawData, isBinary: boolean) => {
-        if (isBinary) return;
-        let msg: Reson8Transcript;
-        try {
-          msg = JSON.parse(raw.toString()) as Reson8Transcript;
-        } catch {
-          return;
-        }
-        this.#processMessage(msg);
-      };
-      ws.on('message', onMessage);
       ws.once('close', () => {
         if (!closing) unexpected = true;
         connAbort.abort();
@@ -384,7 +468,7 @@ export class SpeechStream extends stt.SpeechStream {
         }
       }
 
-      ws.off('message', onMessage);
+      ws.off('message', this.#onMessage);
       this.#connAbort = null;
 
       if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {

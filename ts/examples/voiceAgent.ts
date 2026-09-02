@@ -1,4 +1,5 @@
-import { type JobContext, WorkerOptions, cli, defineAgent, voice } from '@livekit/agents';
+import 'dotenv/config';
+import { type JobContext, ServerOptions, cli, defineAgent, voice } from '@livekit/agents';
 import * as openai from '@livekit/agents-plugin-openai';
 import * as reson8 from '@reson8-labs/agents-plugin-reson8';
 import { fileURLToPath } from 'node:url';
@@ -7,13 +8,17 @@ export default defineAgent({
   entry: async (ctx: JobContext) => {
     await ctx.connect();
 
-    // reson8.STT streams with server-side turn detection, which keeps
-    // voice-agent responses snappy. Any language is supported: omit `language`
-    // to auto-detect, or pass any code (e.g. { language: 'nl' }) to pin it.
     const session = new voice.AgentSession({
-      stt: new reson8.STT(),
+      stt: new reson8.STT({
+        eagerTurnProbability: 0.5,
+        finalTurnProbability: 0.7,
+      }),
       llm: new openai.LLM(),
       tts: new openai.TTS(),
+      turnHandling: {
+        turnDetection: 'stt',
+        preemptiveGeneration: { enabled: true },
+      },
     });
 
     const agent = new voice.Agent({
@@ -25,4 +30,4 @@ export default defineAgent({
   },
 });
 
-cli.runApp(new WorkerOptions({ agent: fileURLToPath(import.meta.url) }));
+cli.runApp(new ServerOptions({ agent: fileURLToPath(import.meta.url) }));
