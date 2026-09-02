@@ -1,6 +1,6 @@
 {
   "name": "@reson8-labs/agents-plugin-reson8",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Reson8 STT plugin for LiveKit Agents for Node.js",
   "author": "Reson8",
   "license": "Apache-2.0",
