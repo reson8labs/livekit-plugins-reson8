@@ -14,6 +14,7 @@ import { WebSocket, type RawData } from 'ws';
 import {
   DEFAULT_API_URL,
   authHeaders,
+  integrationHeaders,
   buildSpeechData,
   type Reson8Transcript,
   toWsBase,
@@ -293,6 +294,7 @@ export class STT extends stt.STT {
         method: 'POST',
         headers: {
           ...authHeaders(this.#apiKey),
+          ...integrationHeaders(),
           'Content-Type': 'application/octet-stream',
         },
         body: new Uint8Array(frame.data.buffer, frame.data.byteOffset, frame.data.byteLength),
@@ -387,7 +389,9 @@ export class SpeechStream extends stt.SpeechStream {
   };
 
   async #connect(): Promise<WebSocket> {
-    const ws = new WebSocket(this.#buildUrl(), { headers: authHeaders(this.#apiKey) });
+    const ws = new WebSocket(this.#buildUrl(), {
+      headers: { ...authHeaders(this.#apiKey), ...integrationHeaders() },
+    });
     ws.on('message', this.#onMessage);
     await new Promise<void>((resolve, reject) => {
       const cleanup = () => {

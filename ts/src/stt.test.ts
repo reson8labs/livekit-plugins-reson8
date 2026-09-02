@@ -1,10 +1,13 @@
 import { initializeLogger, log, stt } from '@livekit/agents';
 import { AudioFrame } from '@livekit/rtc-node';
 import { once } from 'node:events';
+import { readFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebSocketServer, type WebSocket as ServerSocket } from 'ws';
 import { STT } from './stt.js';
+import { INTEGRATION_HEADER } from './utils.js';
+import { version } from './version.js';
 
 process.on('unhandledRejection', (reason) => {
   if (reason instanceof Error && reason.name.startsWith('API')) return;
@@ -20,6 +23,7 @@ type WireEntry = { kind: 'audio'; bytes: number } | { kind: 'json'; data: unknow
 interface Handshake {
   url: string;
   authorization?: string;
+  integration?: string;
 }
 
 async function startServer(hooks: { greet?: (ws: ServerSocket) => void } = {}) {
@@ -33,7 +37,11 @@ async function startServer(hooks: { greet?: (ws: ServerSocket) => void } = {}) {
   let waiting: ((ws: ServerSocket) => void) | undefined;
 
   wss.on('connection', (ws, req) => {
-    handshakes.push({ url: req.url ?? '', authorization: req.headers.authorization });
+    handshakes.push({
+      url: req.url ?? '',
+      authorization: req.headers.authorization,
+      integration: req.headers['x-reson8-integration'] as string | undefined,
+    });
     ws.on('message', (data, isBinary) => {
       if (isBinary) wire.push({ kind: 'audio', bytes: (data as Buffer).byteLength });
       else wire.push({ kind: 'json', data: JSON.parse(data.toString()) });
@@ -453,5 +461,43 @@ describe('turn thresholds', () => {
     } finally {
       globalThis.fetch = realFetch;
     }
+  });
+});
+
+describe('integration header', () => {
+  it('identifies the plugin and version on the streaming handshake', async () => {
+    const { server } = await connectedStream();
+
+    expect(server.handshakes[0]!.integration).toBe(`livekit-js:${version}`);
+  });
+
+  it('sends it on the batch endpoint too', async () => {
+    const realFetch = globalThis.fetch;
+    let seenHeaders: Record<string, string> = {};
+    globalThis.fetch = (async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      seenHeaders = (init?.headers ?? {}) as Record<string, string>;
+
+      return new Response(JSON.stringify({ text: 'ok' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      await new STT({ apiKey: 'k' }).recognize(frame(1600));
+
+      expect(seenHeaders[INTEGRATION_HEADER]).toBe(`livekit-js:${version}`);
+      expect(seenHeaders['Authorization']).toBe('ApiKey k');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('keeps version.ts in step with package.json', async () => {
+    const pkg = JSON.parse(
+      await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { version: string };
+
+    expect(version).toBe(pkg.version);
   });
 });

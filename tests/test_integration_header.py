@@ -10,7 +10,7 @@ from livekit.plugins.reson8 import STT, __version__
 from livekit.plugins.reson8 import stt as stt_module
 from livekit.plugins.reson8._utils import INTEGRATION_HEADER, integration_headers
 
-EXPECTED = f"livekit:{__version__}"
+EXPECTED = f"livekit-python:{__version__}"
 
 
 class _FakeResponse:

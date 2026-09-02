@@ -12,7 +12,7 @@ from .version import __version__
 
 DEFAULT_API_URL = "https://api.reson8.dev"
 INTEGRATION_HEADER = "X-Reson8-Integration"
-INTEGRATION_NAME = "livekit"
+INTEGRATION_NAME = "livekit-python"
 
 
 class SupportedLanguages(StrEnum):
