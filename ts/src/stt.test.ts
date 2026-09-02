@@ -1,10 +1,13 @@
-import { initializeLogger, stt } from '@livekit/agents';
+import { initializeLogger, log, stt } from '@livekit/agents';
 import { AudioFrame } from '@livekit/rtc-node';
 import { once } from 'node:events';
+import { readFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebSocketServer, type WebSocket as ServerSocket } from 'ws';
 import { STT } from './stt.js';
+import { INTEGRATION_HEADER } from './utils.js';
+import { version } from './version.js';
 
 process.on('unhandledRejection', (reason) => {
   if (reason instanceof Error && reason.name.startsWith('API')) return;
@@ -20,9 +23,10 @@ type WireEntry = { kind: 'audio'; bytes: number } | { kind: 'json'; data: unknow
 interface Handshake {
   url: string;
   authorization?: string;
+  integration?: string;
 }
 
-async function startServer() {
+async function startServer(hooks: { greet?: (ws: ServerSocket) => void } = {}) {
   const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 });
   await once(wss, 'listening');
   const { port } = wss.address() as AddressInfo;
@@ -33,11 +37,17 @@ async function startServer() {
   let waiting: ((ws: ServerSocket) => void) | undefined;
 
   wss.on('connection', (ws, req) => {
-    handshakes.push({ url: req.url ?? '', authorization: req.headers.authorization });
+    handshakes.push({
+      url: req.url ?? '',
+      authorization: req.headers.authorization,
+      integration: req.headers['x-reson8-integration'] as string | undefined,
+    });
     ws.on('message', (data, isBinary) => {
       if (isBinary) wire.push({ kind: 'audio', bytes: (data as Buffer).byteLength });
       else wire.push({ kind: 'json', data: JSON.parse(data.toString()) });
     });
+
+    hooks.greet?.(ws);
     if (waiting) {
       const resolve = waiting;
       waiting = undefined;
@@ -130,14 +140,6 @@ async function connectedStream(options: Record<string, unknown> = {}) {
   open.push(stream);
 
   const ws = await active.socket();
-  stream.pushFrame(frame());
-
-  await until(
-    () => active.wire.length > 0,
-    () => 'client never began sending audio, so it may not be listening yet',
-  );
-
-  active.wire.length = 0;
   return { server: active, client, stream, ws };
 }
 
@@ -330,5 +332,172 @@ describe('updateOptions', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 150).unref());
     expect(server.handshakes).toHaveLength(1);
+  });
+});
+
+describe('connection timing', () => {
+  it('keeps messages the server sends the instant the socket opens', async () => {
+    const active = await startServer({
+      greet: (ws) => {
+        send(ws, { type: 'turn_start' });
+        send(ws, { type: 'turn_end_candidate', text: 'immediate' });
+        send(ws, { type: 'turn_end' });
+      },
+    });
+    server = active;
+
+    const client = new STT({ apiKey: 'test-key', apiUrl: active.apiUrl });
+    const stream = client.stream({ connOptions: TEST_CONN });
+    open.push(stream);
+
+    // Nothing is pushed from this side: the entire turn arrived before the
+    // stream had sent a single byte of audio.
+    const events = await collect(stream, 4);
+    expect(events.map((e) => e.type)).toEqual([
+      stt.SpeechEventType.START_OF_SPEECH,
+      stt.SpeechEventType.PREFLIGHT_TRANSCRIPT,
+      stt.SpeechEventType.FINAL_TRANSCRIPT,
+      stt.SpeechEventType.END_OF_SPEECH,
+    ]);
+    expect(events[2]!.alternatives?.[0]!.text).toBe('immediate');
+  });
+});
+
+describe('turn thresholds', () => {
+  it('sends both thresholds as query params on the streaming endpoint', async () => {
+    const { server } = await connectedStream({
+      eagerTurnProbability: 0.35,
+      finalTurnProbability: 0.7,
+    });
+    const url = new URL(server.handshakes[0]!.url, 'http://127.0.0.1');
+
+    expect(url.searchParams.get('eager_turn_probability')).toBe('0.35');
+    expect(url.searchParams.get('final_turn_probability')).toBe('0.7');
+  });
+
+  it('omits them when unset, leaving the server on its own defaults', async () => {
+    const { server } = await connectedStream();
+    const url = new URL(server.handshakes[0]!.url, 'http://127.0.0.1');
+
+    expect(url.searchParams.has('eager_turn_probability')).toBe(false);
+    expect(url.searchParams.has('final_turn_probability')).toBe(false);
+  });
+
+  it('keeps an integral threshold in float form on the wire', async () => {
+    const { server } = await connectedStream({ finalTurnProbability: 1 });
+    const url = new URL(server.handshakes[0]!.url, 'http://127.0.0.1');
+
+    expect(url.searchParams.get('final_turn_probability')).toBe('1.0');
+  });
+
+  it('rejects a threshold outside 0-1', () => {
+    for (const bad of [-0.1, 1.1, Number.NaN]) {
+      expect(() => new STT({ apiKey: 'k', eagerTurnProbability: bad })).toThrow(
+        /eagerTurnProbability must be between 0 and 1/,
+      );
+      expect(() => new STT({ apiKey: 'k', finalTurnProbability: bad })).toThrow(
+        /finalTurnProbability must be between 0 and 1/,
+      );
+    }
+  });
+
+  it('rejects an eager threshold at or above final', () => {
+    expect(() => new STT({ apiKey: 'k', eagerTurnProbability: 0.5, finalTurnProbability: 0.4 })).toThrow(
+      /must be below finalTurnProbability/,
+    );
+
+    expect(() => new STT({ apiKey: 'k', eagerTurnProbability: 0.95 })).toThrow(
+      /must be below finalTurnProbability \(0\.92\)/,
+    );
+  });
+
+  it('warns, but does not throw, when the two thresholds are equal', () => {
+    const warn = vi.spyOn(log(), 'warn').mockImplementation(() => log());
+    try {
+      expect(() => new STT({ apiKey: 'k', eagerTurnProbability: 0.5, finalTurnProbability: 0.5 })).not.toThrow();
+      expect(() => new STT({ apiKey: 'k', finalTurnProbability: 0.5 })).not.toThrow();
+
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(warn.mock.calls[0]![0]).toMatch(/no lead time/);
+
+      warn.mockClear();
+      new STT({ apiKey: 'k' });
+      new STT({ apiKey: 'k', eagerTurnProbability: 0.35, finalTurnProbability: 0.7 });
+
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('does not leak thresholds onto the batch endpoint', async () => {
+    const realFetch = globalThis.fetch;
+    let seenUrl: string | undefined;
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+      seenUrl = String(input);
+      return new Response(JSON.stringify({ text: 'batched' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const client = new STT({
+        apiKey: 'k',
+        eagerTurnProbability: 0.35,
+        finalTurnProbability: 0.7,
+        includeConfidence: true,
+      });
+      const event = await client.recognize(frame(1600));
+      expect(event.alternatives?.[0]!.text).toBe('batched');
+
+      const url = new URL(seenUrl!);
+      expect(url.pathname).toBe('/v1/speech-to-text/prerecorded');
+      expect(url.searchParams.has('eager_turn_probability')).toBe(false);
+      expect(url.searchParams.has('final_turn_probability')).toBe(false);
+
+      expect(url.searchParams.get('include_confidence')).toBe('true');
+      expect(url.searchParams.has('include_language')).toBe(false);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});
+
+describe('integration header', () => {
+  it('identifies the plugin and version on the streaming handshake', async () => {
+    const { server } = await connectedStream();
+
+    expect(server.handshakes[0]!.integration).toBe(`livekit-js:${version}`);
+  });
+
+  it('sends it on the batch endpoint too', async () => {
+    const realFetch = globalThis.fetch;
+    let seenHeaders: Record<string, string> = {};
+    globalThis.fetch = (async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      seenHeaders = (init?.headers ?? {}) as Record<string, string>;
+
+      return new Response(JSON.stringify({ text: 'ok' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      await new STT({ apiKey: 'k' }).recognize(frame(1600));
+
+      expect(seenHeaders[INTEGRATION_HEADER]).toBe(`livekit-js:${version}`);
+      expect(seenHeaders['Authorization']).toBe('ApiKey k');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('keeps version.ts in step with package.json', async () => {
+    const pkg = JSON.parse(
+      await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { version: string };
+
+    expect(version).toBe(pkg.version);
   });
 });

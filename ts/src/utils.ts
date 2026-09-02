@@ -1,4 +1,5 @@
 import { createTimedString, type stt } from '@livekit/agents';
+import { version } from './version.js';
 
 export const DEFAULT_API_URL = 'https://api.reson8.dev';
 
@@ -12,6 +13,11 @@ export function toWsBase(apiUrl: string): string {
 
 export function authHeaders(apiKey: string): Record<string, string> {
   return { Authorization: `ApiKey ${apiKey}` };
+}
+
+export const INTEGRATION_HEADER = 'X-Reson8-Integration';
+export function integrationHeaders(): Record<string, string> {
+  return { [INTEGRATION_HEADER]: `livekit-js:${version}` };
 }
 
 /** A single word in a Reson8 transcript/turn payload. */
