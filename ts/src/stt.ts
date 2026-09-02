@@ -117,7 +117,7 @@ export class STT extends stt.STT {
   readonly #apiKey: string;
   readonly #apiUrl: string;
   readonly #opts: STTOptions;
-  readonly #streams = new Set<SpeechStream>();
+  readonly #streams = new Set<WeakRef<SpeechStream>>();
 
   constructor(opts: STTConstructorOptions = {}) {
     super({ streaming: true, interimResults: true });
@@ -162,7 +162,12 @@ export class STT extends stt.STT {
     if (opts.includeConfidence !== undefined) this.#opts.includeConfidence = opts.includeConfidence;
     if (opts.includeLanguage !== undefined) this.#opts.includeLanguage = opts.includeLanguage;
 
-    for (const stream of this.#streams) {
+    for (const ref of this.#streams) {
+      const stream = ref.deref();
+      if (stream === undefined) {
+        this.#streams.delete(ref);
+        continue;
+      }
       stream.updateOptions(opts);
     }
   }
@@ -177,7 +182,10 @@ export class STT extends stt.STT {
       this.#apiUrl,
       options?.connOptions,
     );
-    this.#streams.add(stream);
+    for (const ref of this.#streams) {
+      if (ref.deref() === undefined) this.#streams.delete(ref);
+    }
+    this.#streams.add(new WeakRef(stream));
     return stream;
   }
 
@@ -269,12 +277,13 @@ export class SpeechStream extends stt.SpeechStream {
   }
 
   updateOptions(opts: UpdatableOptions): void {
+    if (this.closed) return;
     if (opts.language !== undefined) this.#opts.language = opts.language;
     if (opts.customModelId !== undefined) this.#opts.customModelId = opts.customModelId;
     if (opts.includeTimestamps !== undefined) this.#opts.includeTimestamps = opts.includeTimestamps;
     if (opts.includeWords !== undefined) this.#opts.includeWords = opts.includeWords;
     if (opts.includeLanguage !== undefined) this.#opts.includeLanguage = opts.includeLanguage;
-    // reconnect so the new query params take effect on the next connection
+
     this.#reconnectRequested = true;
     this.#connAbort?.abort();
   }
@@ -308,6 +317,7 @@ export class SpeechStream extends stt.SpeechStream {
   protected async run(): Promise<void> {
     while (!this.input.closed) {
       let ws: WebSocket;
+      this.#reconnectRequested = false;
       try {
         ws = await this.#connect();
       } catch {
@@ -319,7 +329,11 @@ export class SpeechStream extends stt.SpeechStream {
 
       const connAbort = new AbortController();
       this.#connAbort = connAbort;
-      this.#reconnectRequested = false;
+      if (this.#reconnectRequested) {
+        this.#connAbort = null;
+        ws.close();
+        continue;
+      }
       let closing = false;
       let unexpected = false;
 
@@ -348,9 +362,6 @@ export class SpeechStream extends stt.SpeechStream {
         else connAbort.signal.addEventListener('abort', () => resolve(ABORTED), { once: true });
       });
 
-      // Forward audio to the active connection until it ends or input is
-      // exhausted. Turn boundaries are detected server-side, so flush sentinels
-      // are not part of the turns protocol and are intentionally ignored.
       while (true) {
         const result = await Promise.race([this.input.next(), abortPromise]);
         if (result === ABORTED) break;
@@ -361,7 +372,12 @@ export class SpeechStream extends stt.SpeechStream {
           closing = true;
           break;
         }
-        if (value === SpeechStream.FLUSH_SENTINEL) continue;
+        if (value === SpeechStream.FLUSH_SENTINEL) {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'flush_request' }));
+          }
+          continue;
+        }
         if (ws.readyState === WebSocket.OPEN) {
           const frame = value;
           ws.send(new Uint8Array(frame.data.buffer, frame.data.byteOffset, frame.data.byteLength));

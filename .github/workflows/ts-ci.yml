@@ -37,6 +37,8 @@ jobs:
         run: npm ci
       - name: Type-check
         run: npm run typecheck
+      - name: Test
+        run: npm test
       - name: Build
         run: npm run build
       # These are the four files package.json's "exports" map promises.
