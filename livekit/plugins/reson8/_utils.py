@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Sequence
 from typing import Any, Literal, get_args
 from urllib.parse import urlencode
@@ -8,6 +9,7 @@ from urllib.parse import urlencode
 from livekit.agents import APIStatusError, LanguageCode, create_api_error_from_http, stt
 from livekit.agents.types import NOT_GIVEN, NotGivenOr, TimedString
 
+from .log import logger
 from .version import __version__
 
 DEFAULT_API_URL = "https://api.reson8.dev"
@@ -87,6 +89,42 @@ def normalize_languages(value: str | Sequence[str] | None) -> str | None:
         )
 
     return ",".join(codes)
+
+
+def check_comma_joined(
+    name: str, values: Sequence[str] | None, *, limit: int | None = None
+) -> None:
+    """Validate entries that reach Reson8 joined into one comma-separated value."""
+
+    if values is None:
+        return
+
+    if limit is not None and len(values) > limit:
+        raise ValueError(f"{name} accepts at most {limit} entries, got {len(values)}")
+
+    for value in values:
+        if not value.strip():
+            raise ValueError(f"{name} cannot contain an empty entry")
+
+        if "," in value:
+            raise ValueError(
+                f"{name} is comma-separated on the wire, so no entry may contain a comma: {value!r}"
+            )
+
+
+def check_probability(name: str, value: float | None) -> None:
+    if value is not None and not 0.0 <= value <= 1.0:
+        raise ValueError(f"{name} must be between 0 and 1, got {value}")
+
+
+def resolve_base_url(base_url: str | None) -> str:
+    resolved = base_url or os.environ.get("RESON8_BASE_URL")
+
+    if not resolved and (legacy := os.environ.get("RESON8_API_URL")):
+        logger.warning("RESON8_API_URL is deprecated, use RESON8_BASE_URL instead")
+        resolved = legacy
+
+    return (resolved or DEFAULT_API_URL).rstrip("/")
 
 
 def build_url(base_url: str, path: str, params: dict[str, str], *, websocket: bool = False) -> str:

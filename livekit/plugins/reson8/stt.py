@@ -25,7 +25,6 @@ from livekit.agents.utils import is_given
 from livekit import rtc
 
 from ._utils import (
-    DEFAULT_API_URL,
     ENCODINGS,
     ERROR_MESSAGE_HEADER,
     FILLER_MODES,
@@ -39,51 +38,18 @@ from ._utils import (
     auth_headers,
     build_speech_data,
     build_url,
+    check_comma_joined,
+    check_probability,
     integration_headers,
     normalize_languages,
     problem_code,
+    resolve_base_url,
     status_error,
 )
 from .log import logger
 
 KEEPALIVE_INTERVAL = 30.0
 _SEND_CHUNK_MS = 100
-
-
-def _resolve_base_url(base_url: str | None) -> str:
-    resolved = base_url or os.environ.get("RESON8_BASE_URL")
-
-    if not resolved and (legacy := os.environ.get("RESON8_API_URL")):
-        logger.warning("RESON8_API_URL is deprecated, use RESON8_BASE_URL instead")
-        resolved = legacy
-
-    return (resolved or DEFAULT_API_URL).rstrip("/")
-
-
-def _check_comma_joined(
-    name: str, values: Sequence[str] | None, *, limit: int | None = None
-) -> None:
-    """Validate entries that reach Reson8 joined into one comma-separated value."""
-
-    if values is None:
-        return
-
-    if limit is not None and len(values) > limit:
-        raise ValueError(f"{name} accepts at most {limit} entries, got {len(values)}")
-
-    for value in values:
-        if not value.strip():
-            raise ValueError(f"{name} cannot contain an empty entry")
-
-        if "," in value:
-            raise ValueError(
-                f"{name} is comma-separated on the wire, so no entry may contain a comma: {value!r}"
-            )
-
-
-def _check_probability(name: str, value: float | None) -> None:
-    if value is not None and not 0.0 <= value <= 1.0:
-        raise ValueError(f"{name} must be between 0 and 1, got {value}")
 
 
 @dataclass(frozen=True)
@@ -113,8 +79,8 @@ class TurnOptions:
     final_probability: float | None = None
 
     def __post_init__(self) -> None:
-        _check_probability("eager_probability", self.eager_probability)
-        _check_probability("final_probability", self.final_probability)
+        check_probability("eager_probability", self.eager_probability)
+        check_probability("final_probability", self.final_probability)
 
         eager = self.eager_probability
         final = self.final_probability
@@ -266,8 +232,8 @@ class BiasingOptions:
     patterns: Sequence[str] | None = None
 
     def __post_init__(self) -> None:
-        _check_comma_joined("phrases", self.phrases, limit=MAX_PHRASES)
-        _check_comma_joined("patterns", self.patterns)
+        check_comma_joined("phrases", self.phrases, limit=MAX_PHRASES)
+        check_comma_joined("patterns", self.patterns)
 
         if self.strength is not None and self.strength < 0:
             raise ValueError(f"strength must be non-negative, got {self.strength}")
@@ -444,7 +410,7 @@ class STT(stt.STT):
             )
 
         self._api_key = api_key
-        self._base_url = _resolve_base_url(base_url)
+        self._base_url = resolve_base_url(base_url)
         self._opts = STTOptions(
             language=normalize_languages(language),
             turn=turn or TurnOptions(),
