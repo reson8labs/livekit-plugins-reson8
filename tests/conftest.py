@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Protocol, cast
 
 import aiohttp
 import pytest
@@ -41,13 +41,26 @@ class FakeChan:
         self.events.append(event)
 
 
+def emitted(stream: SpeechStream) -> list[stt.SpeechEvent]:
+    """The events a ``make_stream()`` stream has sent so far."""
+    return cast(FakeChan, stream._event_ch).events
+
+
+class MakeOpts(Protocol):
+    def __call__(self, **overrides: object) -> STTOptions: ...
+
+
+class MakeStream(Protocol):
+    def __call__(self, **overrides: object) -> SpeechStream: ...
+
+
 @pytest.fixture
-def make_opts() -> Callable[..., STTOptions]:
+def make_opts() -> MakeOpts:
     return _make_opts
 
 
 @pytest.fixture
-def make_stream() -> Callable[..., SpeechStream]:
+def make_stream() -> MakeStream:
     """Build a SpeechStream without running its base __init__.
 
     The real ``SpeechStream.__init__`` (via ``RecognizeStream``) spawns

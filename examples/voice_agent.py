@@ -14,8 +14,8 @@ class Assistant(Agent):
         self.session.generate_reply(instructions="Begroet de gebruiker en bied je hulp aan.")
 
 
-async def entrypoint(ctx: JobContext):
-    session = AgentSession(
+async def entrypoint(ctx: JobContext) -> None:
+    session: AgentSession = AgentSession(
         stt=reson8.STT(),
         llm=openai.LLM(),
         tts=openai.TTS(),

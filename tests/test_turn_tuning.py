@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 
+import aiohttp
 import pytest
+from conftest import MakeOpts, StartServer
 from livekit.agents.types import APIConnectOptions
 
 from livekit import rtc
@@ -10,14 +12,14 @@ from livekit.plugins import reson8
 from livekit.plugins.reson8.stt import TurnOptions
 
 
-def test_thresholds_reach_the_query_string(make_opts):
+def test_thresholds_reach_the_query_string(make_opts: MakeOpts) -> None:
     opts = make_opts(turn=TurnOptions(eager_turn_probability=0.35, final_turn_probability=0.7))
     params = opts.query_params(streaming=True)
     assert params["eager_turn_probability"] == "0.35"
     assert params["final_turn_probability"] == "0.7"
 
 
-def test_thresholds_are_omitted_for_batch(make_opts):
+def test_thresholds_are_omitted_for_batch(make_opts: MakeOpts) -> None:
     """The thresholds only exist on the turns endpoint."""
     opts = make_opts(turn=TurnOptions(eager_turn_probability=0.35, final_turn_probability=0.7))
     params = opts.query_params(streaming=False)
@@ -26,7 +28,7 @@ def test_thresholds_are_omitted_for_batch(make_opts):
 
 
 @pytest.mark.parametrize("value", [-0.1, 1.1])
-def test_out_of_range_probability_raises(value):
+def test_out_of_range_probability_raises(value: float) -> None:
     with pytest.raises(ValueError, match="between 0 and 1"):
         reson8.STT(api_key="k", final_turn_probability=value)
 
@@ -39,7 +41,7 @@ def test_out_of_range_probability_raises(value):
         (0.95, None),  # above the server's 0.92 default
     ],
 )
-def test_inverted_thresholds_raise(eager, final):
+def test_inverted_thresholds_raise(eager: float, final: float | None) -> None:
     with pytest.raises(ValueError, match="must be below"):
         TurnOptions(eager_turn_probability=eager, final_turn_probability=final)
 
@@ -51,7 +53,9 @@ def test_inverted_thresholds_raise(eager, final):
         (None, 0.5),  # 0.5 == the server's default eager
     ],
 )
-def test_equal_thresholds_warn(eager, final, caplog):
+def test_equal_thresholds_warn(
+    eager: float | None, final: float, caplog: pytest.LogCaptureFixture
+) -> None:
     """Equal thresholds are legal but pointless: the preflight has no lead."""
     with caplog.at_level("WARNING"):
         TurnOptions(eager_turn_probability=eager, final_turn_probability=final)
@@ -59,13 +63,17 @@ def test_equal_thresholds_warn(eager, final, caplog):
 
 
 @pytest.mark.parametrize(("eager", "final"), [(None, None), (0.35, 0.7)])
-def test_sane_thresholds_are_quiet(eager, final, caplog):
+def test_sane_thresholds_are_quiet(
+    eager: float | None, final: float | None, caplog: pytest.LogCaptureFixture
+) -> None:
     with caplog.at_level("WARNING"):
         TurnOptions(eager_turn_probability=eager, final_turn_probability=final)
     assert not caplog.records
 
 
-async def test_flush_sends_flush_request(reson8_server, client_session):
+async def test_flush_sends_flush_request(
+    reson8_server: StartServer, client_session: aiohttp.ClientSession
+) -> None:
     """LiveKit's flush sentinel must become a flush_request on the wire.
 
     Without this the caller has no way to commit a turn early, and is stuck

@@ -152,7 +152,7 @@ class STT(stt.STT):
       ``/v1/speech-to-text/prerecorded`` and returns the full transcript.
 
     Leave ``language`` as ``None`` (the default) to auto-detect the spoken
-    language, or pass one or more codes from :class:`SupportedLanguages` to pin
+    language, or pass one or more :data:`SupportedLanguage` codes to pin
     recognition.
 
     ``eager_turn_probability`` and ``final_turn_probability`` are the main lever
@@ -193,7 +193,7 @@ class STT(stt.STT):
             api_key: Reson8 API key. Falls back to the ``RESON8_API_KEY`` env var.
             api_url: Reson8 API base URL. Falls back to ``RESON8_API_URL`` or
                 ``https://api.reson8.dev``.
-            language: One or more codes from :class:`SupportedLanguages` to pin
+            language: One or more :data:`SupportedLanguage` codes to pin
                 recognition to. Pass a single code (``"nl"``), a comma-string
                 (``"nl,de"``), or a list (``["nl", "de"]``). Leave as ``None`` to
                 auto-detect. Raises ``ValueError`` for unsupported codes.

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import aiohttp
+from conftest import StartServer
 from livekit.agents.types import APIConnectOptions
 
 from livekit import rtc
@@ -12,11 +14,13 @@ EXPECTED = f"livekit-python:{__version__}"
 NO_RETRY = APIConnectOptions(max_retry=0)
 
 
-def test_integration_headers_names_the_plugin_and_its_version():
+def test_integration_headers_names_the_plugin_and_its_version() -> None:
     assert integration_headers() == {INTEGRATION_HEADER: EXPECTED}
 
 
-async def test_prerecorded_request_is_attributed(reson8_server, client_session):
+async def test_prerecorded_request_is_attributed(
+    reson8_server: StartServer, client_session: aiohttp.ClientSession
+) -> None:
     server = await reson8_server()
     stt = reson8.STT(api_key="secret", api_url=server.api_url, http_session=client_session)
 
@@ -33,7 +37,9 @@ async def test_prerecorded_request_is_attributed(reson8_server, client_session):
     assert server.post_headers["Content-Type"] == "application/octet-stream"
 
 
-async def test_turns_handshake_is_attributed(reson8_server, client_session):
+async def test_turns_handshake_is_attributed(
+    reson8_server: StartServer, client_session: aiohttp.ClientSession
+) -> None:
     server = await reson8_server()
     stt = reson8.STT(api_key="secret", api_url=server.api_url, http_session=client_session)
 
