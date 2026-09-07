@@ -16,7 +16,6 @@ from livekit.agents import (
     DEFAULT_API_CONNECT_OPTIONS,
     APIConnectionError,
     APIConnectOptions,
-    APIStatusError,
     APITimeoutError,
     stt,
     utils,
@@ -30,10 +29,13 @@ from livekit import rtc
 
 from ._utils import (
     DEFAULT_API_URL,
+    ERROR_MESSAGE_HEADER,
     auth_headers,
     build_speech_data,
     integration_headers,
     normalize_languages,
+    problem_code,
+    status_error,
     to_ws_base,
 )
 from .log import logger
@@ -331,15 +333,15 @@ class STT(stt.STT[Any]):
                 )
                 resp.raise_for_status()
                 body = resp.json()
-        except httpx.TimeoutException as e:
-            raise APITimeoutError() from e
+        except httpx.TimeoutException:
+            raise APITimeoutError("Reson8 did not respond in time") from None
         except httpx.HTTPStatusError as e:
-            raise APIStatusError(
-                e.response.text or str(e),
-                status_code=e.response.status_code,
-            ) from e
+            raise status_error(
+                e.response.status_code,
+                detail=problem_code(e.response.text),
+            ) from None
         except httpx.HTTPError as e:
-            raise APIConnectionError() from e
+            raise APIConnectionError(f"Failed to reach Reson8 ({type(e).__name__})") from None
 
         return stt.SpeechEvent(
             type=stt.SpeechEventType.FINAL_TRANSCRIPT,
@@ -437,14 +439,22 @@ class SpeechStream(stt.RecognizeStream):
                         **integration_headers(),
                     },
                 )
-            except (websockets.InvalidStatus, websockets.InvalidHandshake, OSError) as e:
-                raise APIConnectionError("failed to connect to Reson8") from e
+            except websockets.InvalidStatus as e:
+                raise status_error(
+                    e.response.status_code,
+                    detail=e.response.headers.get(ERROR_MESSAGE_HEADER),
+                ) from None
+            except (websockets.InvalidHandshake, OSError) as e:
+                raise APIConnectionError(
+                    f"Failed to connect to Reson8 ({type(e).__name__})"
+                ) from None
 
             tasks = [
                 asyncio.create_task(send_task(ws)),
                 asyncio.create_task(recv_task(ws)),
             ]
             wait_reconnect = asyncio.create_task(self._reconnect_event.wait())
+
             try:
                 waiters: list[asyncio.Future[Any]] = [
                     asyncio.gather(*tasks),
@@ -460,13 +470,15 @@ class SpeechStream(stt.RecognizeStream):
 
                 if wait_reconnect.done() and not closing:
                     self._reconnect_event.clear()
-                    logger.debug("reconnecting to Reson8 to apply updated options")
+                    logger.debug("Reconnecting to Reson8 to apply updated options")
                     continue
+
                 break
             except websockets.ConnectionClosedError as e:
                 if closing:
                     break
-                raise APIConnectionError("Reson8 connection closed unexpectedly") from e
+
+                raise APIConnectionError(f"Reson8 connection closed unexpectedly: {e}") from None
             finally:
                 await utils.aio.gracefully_cancel(*tasks, wait_reconnect)
                 await ws.close()

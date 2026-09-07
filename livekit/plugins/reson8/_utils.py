@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from enum import StrEnum
 from typing import Any
 
-from livekit.agents import LanguageCode, stt
+from livekit.agents import APIStatusError, LanguageCode, create_api_error_from_http, stt
 from livekit.agents.types import NOT_GIVEN, NotGivenOr, TimedString
 
 from .version import __version__
@@ -12,6 +13,17 @@ from .version import __version__
 DEFAULT_API_URL = "https://api.reson8.dev"
 INTEGRATION_HEADER = "X-Reson8-Integration"
 INTEGRATION_NAME = "livekit-python"
+
+ERROR_MESSAGE_HEADER = "X-Error-Message"
+
+# https://docs.reson8.dev/api/speech-to-text/turns/ and /api/speech-to-text/prerecorded/
+_STATUS_HINTS = {
+    400: "Invalid query parameter, or unknown custom_model_id",
+    401: "Missing or invalid credentials, check the provided api_key or RESON8_API_KEY",
+    402: "Credit limit exceeded, see https://docs.reson8.dev/limits/",
+    413: "The request body exceeds the size limit",
+    429: "Concurrent connection limit exceeded, see https://docs.reson8.dev/limits/",
+}
 
 
 class SupportedLanguages(StrEnum):
@@ -74,6 +86,33 @@ def auth_headers(api_key: str) -> dict[str, str]:
 
 def integration_headers() -> dict[str, str]:
     return {INTEGRATION_HEADER: f"{INTEGRATION_NAME}:{__version__}"}
+
+
+def problem_code(body: str) -> str | None:
+    """Read the ``code`` field out of a ``problem+json`` error body."""
+
+    try:
+        parsed = json.loads(body)
+    except ValueError:
+        return None
+
+    code = parsed.get("code") if isinstance(parsed, dict) else None
+    return code if isinstance(code, str) else None
+
+
+def status_error(status_code: int, *, detail: str | None = None) -> APIStatusError:
+    """
+    Map a Reson8 rejection onto an actionable error.
+
+    Bodies are not attached, to keep provider payloads out of telemetry.
+
+    ``APIStatusError`` marks non-transient 4xx as non-retryable, so an
+    exhausted credit balance or a bad key fails fast instead of backing off.
+    """
+
+    hint = _STATUS_HINTS.get(status_code)
+    message = ": ".join(p for p in (detail, hint) if p)
+    return create_api_error_from_http(message, status=status_code)
 
 
 def _confidence(word: dict[str, Any]) -> NotGivenOr[float]:
