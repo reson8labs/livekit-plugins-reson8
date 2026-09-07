@@ -76,17 +76,18 @@ def integration_headers() -> dict[str, str]:
     return {INTEGRATION_HEADER: f"{INTEGRATION_NAME}:{__version__}"}
 
 
-def _to_probability(confidence: float | None) -> NotGivenOr[float]:
+def _confidence(word: dict[str, Any]) -> NotGivenOr[float]:
     """
-    Reson8 reports confidence as a probability in (0, 1].
+    Reson8 reports word confidence as a probability in (0, 1].
 
     See https://docs.reson8.dev/glossary/.
     """
 
-    if confidence is None:
+    confidence: float | None = word.get("confidence")
+    if confidence is None or not confidence > 0:
         return NOT_GIVEN
 
-    return min(max(confidence, 0.0), 1.0)
+    return min(confidence, 1.0)
 
 
 def _word_time(word: dict[str, Any], key: str, *, offset: float) -> NotGivenOr[float]:
@@ -111,20 +112,20 @@ def build_speech_data(
     only present when the matching ``include_*`` options are enabled.
     """
     raw_words = msg.get("words") or []
+    confidences = [_confidence(w) for w in raw_words]
     words = [
         TimedString(
             text=w.get("text", ""),
             start_time=_word_time(w, "start", offset=start_time_offset),
             end_time=_word_time(w, "end", offset=start_time_offset),
-            confidence=_to_probability(w.get("confidence")),
+            confidence=c,
             start_time_offset=start_time_offset,
         )
-        for w in raw_words
+        for w, c in zip(raw_words, confidences, strict=True)
     ]
 
-    word_probs = [_to_probability(w.get("confidence")) for w in raw_words if "confidence" in w]
-    numeric_probs = [p for p in word_probs if isinstance(p, float)]
-    confidence = sum(numeric_probs) / len(numeric_probs) if numeric_probs else 1.0
+    known = [c for c in confidences if isinstance(c, float)]
+    confidence = sum(known) / len(known) if known else 1.0
 
     start_ms = msg.get("start_ms")
     duration_ms = msg.get("duration_ms") or 0

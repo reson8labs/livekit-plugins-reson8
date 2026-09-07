@@ -4,7 +4,7 @@ import pytest
 from livekit.agents.types import NOT_GIVEN
 
 from livekit.plugins.reson8._utils import (
-    _to_probability,
+    _confidence,
     _word_time,
     auth_headers,
     build_speech_data,
@@ -53,17 +53,21 @@ def test_to_ws_base(api_url, expected):
     assert to_ws_base(api_url) == expected
 
 
-def test_to_probability_passes_through_documented_range():
-    assert _to_probability(0.99) == pytest.approx(0.99)
+def test_confidence_passes_through_documented_range():
+    assert _confidence({"confidence": 0.99}) == pytest.approx(0.99)
 
 
-def test_to_probability_none_is_not_given():
-    assert _to_probability(None) is NOT_GIVEN
+def test_confidence_missing_is_not_given():
+    assert _confidence({"text": "hi"}) is NOT_GIVEN
 
 
-@pytest.mark.parametrize(("value", "expected"), [(1.5, 1.0), (-0.5, 0.0)])
-def test_to_probability_clamps_out_of_range(value, expected):
-    assert _to_probability(value) == expected
+def test_confidence_clamps_above_range():
+    assert _confidence({"confidence": 1.5}) == 1.0
+
+
+@pytest.mark.parametrize("value", [0.0, -0.5, float("nan")])
+def test_confidence_non_positive_is_not_given(value):
+    assert _confidence({"confidence": value}) is NOT_GIVEN
 
 
 def test_word_time_missing_start_ms_is_not_given():
