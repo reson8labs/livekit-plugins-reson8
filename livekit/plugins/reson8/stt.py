@@ -121,12 +121,14 @@ class STTOptions:
             params["include_timestamps"] = "true"
         if self.include_words:
             params["include_words"] = "true"
+        if self.include_language:
+            params["include_language"] = "true"
+
         if streaming:
-            if self.include_language:
-                params["include_language"] = "true"
             params.update(self.turn.query_params())
         elif self.include_confidence:
             params["include_confidence"] = "true"
+
         return params
 
 
@@ -197,7 +199,7 @@ class STT(stt.STT[Any]):
             include_timestamps: Include ``start``/``end`` times on results.
             include_words: Include word-level results.
             include_confidence: Include confidence scores (batch recognition).
-            include_language: Report the detected language code (streaming).
+            include_language: Report the detected language code.
             eager_turn_probability: Confidence (0-1) at which the preflight
                 transcript is emitted. Server default ``0.5``.
             final_turn_probability: Confidence (0-1) at which the turn commits.
@@ -414,11 +416,16 @@ class SpeechStream(stt.RecognizeStream):
             async for raw in ws:
                 if isinstance(raw, bytes):
                     continue
+
                 try:
                     msg = json.loads(raw)
                 except (ValueError, TypeError):
-                    logger.warning("ignoring unparseable Reson8 message: %r", raw)
+                    logger.warning(
+                        "ignoring unparseable Reson8 message",
+                        extra={"lk.pii.message": raw},
+                    )
                     continue
+
                 self._process_message(msg)
 
         while True:
@@ -433,7 +440,6 @@ class SpeechStream(stt.RecognizeStream):
             except (websockets.InvalidStatus, websockets.InvalidHandshake, OSError) as e:
                 raise APIConnectionError("failed to connect to Reson8") from e
 
-            self._num_retries = 0
             tasks = [
                 asyncio.create_task(send_task(ws)),
                 asyncio.create_task(recv_task(ws)),

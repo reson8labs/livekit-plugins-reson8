@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
 from enum import StrEnum
 from typing import Any
@@ -77,17 +76,17 @@ def integration_headers() -> dict[str, str]:
     return {INTEGRATION_HEADER: f"{INTEGRATION_NAME}:{__version__}"}
 
 
-def _to_probability(log_prob: float | None) -> NotGivenOr[float]:
-    """Reson8 returns confidence as a natural log-probability (<= 0).
-
-    Convert it to a probability in (0, 1] for LiveKit's confidence fields.
+def _to_probability(confidence: float | None) -> NotGivenOr[float]:
     """
-    if log_prob is None:
+    Reson8 reports confidence as a probability in (0, 1].
+
+    See https://docs.reson8.dev/glossary/.
+    """
+
+    if confidence is None:
         return NOT_GIVEN
-    try:
-        return math.exp(log_prob)
-    except (OverflowError, ValueError):
-        return 1.0
+
+    return min(max(confidence, 0.0), 1.0)
 
 
 def _word_time(word: dict[str, Any], key: str, *, offset: float) -> NotGivenOr[float]:
