@@ -21,18 +21,20 @@ def test_query_params_omits_language_when_none(make_opts):
     assert "language" not in params
 
 
-def test_query_params_streaming_prefers_language_flag_over_confidence(make_opts):
+def test_query_params_streaming_omits_confidence(make_opts):
     opts = make_opts(include_language=True, include_confidence=True)
     params = opts.query_params(streaming=True)
+
     assert params.get("include_language") == "true"
     assert "include_confidence" not in params
 
 
-def test_query_params_batch_prefers_confidence_over_language_flag(make_opts):
+def test_query_params_batch_sends_both_language_and_confidence(make_opts):
     opts = make_opts(include_language=True, include_confidence=True)
     params = opts.query_params(streaming=False)
+
     assert params.get("include_confidence") == "true"
-    assert "include_language" not in params
+    assert params.get("include_language") == "true"
 
 
 def test_query_params_passes_through_timestamps_words_and_model(make_opts):

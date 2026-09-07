@@ -101,7 +101,7 @@ print(event.alternatives[0].text)
 | `include_timestamps` | — | `False` |
 | `include_words` | — | `False` |
 | `include_confidence` | — | `False` (batch recognition) |
-| `include_language` | — | `False` (report detected language while streaming) |
+| `include_language` | — | `False` (report the detected language) |
 | `eager_turn_probability` | — | `None` (server default `0.5`) |
 | `final_turn_probability` | — | `None` (server default `0.92`) |
 
@@ -118,7 +118,7 @@ longer utterances.
 `flush()` commits the current turn immediately, keeping `final_turn_probability`
 intact. LiveKit never calls it for you.
 
-See [Turns](https://docs.reson8.dev/documentation/speech-to-text/turns/) for how
+See [Turns](https://docs.reson8.dev/speech-to-text/turns/) for how
 turn events work server-side.
 
 ## Running the example

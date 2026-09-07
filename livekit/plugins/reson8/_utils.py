@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import math
+import json
 from collections.abc import Sequence
-from enum import StrEnum
+from enum import Enum
 from typing import Any
 
-from livekit.agents import LanguageCode, stt
+from livekit.agents import APIStatusError, LanguageCode, create_api_error_from_http, stt
 from livekit.agents.types import NOT_GIVEN, NotGivenOr, TimedString
 
 from .version import __version__
@@ -14,8 +14,19 @@ DEFAULT_API_URL = "https://api.reson8.dev"
 INTEGRATION_HEADER = "X-Reson8-Integration"
 INTEGRATION_NAME = "livekit-python"
 
+ERROR_MESSAGE_HEADER = "X-Error-Message"
 
-class SupportedLanguages(StrEnum):
+# https://docs.reson8.dev/api/speech-to-text/turns/ and /api/speech-to-text/prerecorded/
+_STATUS_HINTS = {
+    400: "Invalid query parameter, or unknown custom_model_id",
+    401: "Missing or invalid credentials, check the provided api_key or RESON8_API_KEY",
+    402: "Credit limit exceeded, see https://docs.reson8.dev/limits/",
+    413: "The request body exceeds the size limit",
+    429: "Concurrent connection limit exceeded, see https://docs.reson8.dev/limits/",
+}
+
+
+class SupportedLanguages(str, Enum):
     """The languages Reson8 can recognize, valued by ISO 639-1 code.
 
     Members are strings (``SupportedLanguages.DUTCH == "nl"``), so they can be
@@ -34,6 +45,12 @@ class SupportedLanguages(StrEnum):
     POLISH = "pl"
     PORTUGUESE = "pt"
     SWEDISH = "sv"
+
+    def __str__(self) -> str:
+        return str.__str__(self)
+
+    def __format__(self, format_spec: str) -> str:
+        return str.__format__(self, format_spec)
 
 
 def normalize_languages(value: str | Sequence[str] | None) -> str | None:
@@ -77,17 +94,45 @@ def integration_headers() -> dict[str, str]:
     return {INTEGRATION_HEADER: f"{INTEGRATION_NAME}:{__version__}"}
 
 
-def _to_probability(log_prob: float | None) -> NotGivenOr[float]:
-    """Reson8 returns confidence as a natural log-probability (<= 0).
+def problem_code(body: str) -> str | None:
+    """Read the ``code`` field out of a ``problem+json`` error body."""
 
-    Convert it to a probability in (0, 1] for LiveKit's confidence fields.
-    """
-    if log_prob is None:
-        return NOT_GIVEN
     try:
-        return math.exp(log_prob)
-    except (OverflowError, ValueError):
-        return 1.0
+        parsed = json.loads(body)
+    except ValueError:
+        return None
+
+    code = parsed.get("code") if isinstance(parsed, dict) else None
+    return code if isinstance(code, str) else None
+
+
+def status_error(status_code: int, *, detail: str | None = None) -> APIStatusError:
+    """
+    Map a Reson8 rejection onto an actionable error.
+
+    Bodies are not attached, to keep provider payloads out of telemetry.
+
+    ``APIStatusError`` marks non-transient 4xx as non-retryable, so an
+    exhausted credit balance or a bad key fails fast instead of backing off.
+    """
+
+    hint = _STATUS_HINTS.get(status_code)
+    message = ": ".join(p for p in (detail, hint) if p)
+    return create_api_error_from_http(message, status=status_code)
+
+
+def _confidence(word: dict[str, Any]) -> NotGivenOr[float]:
+    """
+    Reson8 reports word confidence as a probability in (0, 1].
+
+    See https://docs.reson8.dev/glossary/.
+    """
+
+    confidence: float | None = word.get("confidence")
+    if confidence is None or not confidence > 0:
+        return NOT_GIVEN
+
+    return min(confidence, 1.0)
 
 
 def _word_time(word: dict[str, Any], key: str, *, offset: float) -> NotGivenOr[float]:
@@ -112,20 +157,20 @@ def build_speech_data(
     only present when the matching ``include_*`` options are enabled.
     """
     raw_words = msg.get("words") or []
+    confidences = [_confidence(w) for w in raw_words]
     words = [
         TimedString(
             text=w.get("text", ""),
             start_time=_word_time(w, "start", offset=start_time_offset),
             end_time=_word_time(w, "end", offset=start_time_offset),
-            confidence=_to_probability(w.get("confidence")),
+            confidence=c,
             start_time_offset=start_time_offset,
         )
-        for w in raw_words
+        for w, c in zip(raw_words, confidences, strict=True)
     ]
 
-    word_probs = [_to_probability(w.get("confidence")) for w in raw_words if "confidence" in w]
-    numeric_probs = [p for p in word_probs if isinstance(p, float)]
-    confidence = sum(numeric_probs) / len(numeric_probs) if numeric_probs else 1.0
+    known = [c for c in confidences if isinstance(c, float)]
+    confidence = sum(known) / len(known) if known else 1.0
 
     start_ms = msg.get("start_ms")
     duration_ms = msg.get("duration_ms") or 0
