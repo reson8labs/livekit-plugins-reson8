@@ -54,7 +54,8 @@ def _check_probability(name: str, value: float | None) -> None:
 
 @dataclass(frozen=True)
 class TurnOptions:
-    """When Reson8 ends a turn, the main lever on end-of-turn latency.
+    """
+    When Reson8 ends a turn, the main lever on end-of-turn latency.
 
     ``None`` leaves the server's default. See
     https://docs.reson8.dev/speech-to-text/turns/.
@@ -86,13 +87,12 @@ class TurnOptions:
         eager = self.SERVER_DEFAULT_EAGER if eager is None else eager
         final = self.SERVER_DEFAULT_FINAL if final is None else final
 
-        # not a documented server constraint, but an eager threshold above the
-        # final one can never fire, so the preflight would never be emitted
         if eager > final:
             raise ValueError(
                 f"eager_probability ({eager}) must be below final_probability ({final}); "
                 f"raise final_probability or lower eager_probability"
             )
+
         if eager == final:
             logger.warning(
                 "eager_probability and final_probability are both %s, so the turn commits "
@@ -103,8 +103,10 @@ class TurnOptions:
 
     def query_params(self) -> dict[str, str]:
         params: dict[str, str] = {}
+
         if self.eager_probability is not None:
             params["eager_turn_probability"] = str(self.eager_probability)
+
         if self.final_probability is not None:
             params["final_turn_probability"] = str(self.final_probability)
 
@@ -113,7 +115,8 @@ class TurnOptions:
 
 @dataclass(frozen=True)
 class AudioOptions:
-    """How to describe the audio sent to Reson8.
+    """
+    How to describe the audio sent to Reson8.
 
     These label the stream rather than convert it: LiveKit supplies 16-bit PCM
     frames, so ``encoding`` should stay at its default unless you know the
@@ -136,11 +139,13 @@ class AudioOptions:
                 f"unsupported encoding: {self.encoding}. "
                 f"Reson8 accepts: {', '.join(sorted(ENCODINGS))}."
             )
+
         if not MIN_CHANNELS <= self.num_channels <= MAX_CHANNELS:
             raise ValueError(
                 f"num_channels must be between {MIN_CHANNELS} and {MAX_CHANNELS}, "
                 f"got {self.num_channels}"
             )
+
         if self.sample_rate <= 0:
             raise ValueError(f"sample_rate must be positive, got {self.sample_rate}")
 
@@ -154,14 +159,14 @@ class AudioOptions:
 
 @dataclass(frozen=True)
 class TranscriptOptions:
-    """Which extra detail Reson8 reports alongside the transcript.
+    """
+    Which extra detail Reson8 reports alongside the transcript.
 
     Args:
         words: Word-level results, each with its own timing.
         timestamps: Start and end times on the transcript itself.
         language: The detected language code.
-        confidence: Per-word confidence. Batch recognition only, since the
-            turn-aware endpoint does not report it.
+        confidence: Per-word confidence. Batch recognition only.
     """
 
     words: bool = False
@@ -171,12 +176,16 @@ class TranscriptOptions:
 
     def query_params(self, *, streaming: bool) -> dict[str, str]:
         params: dict[str, str] = {}
+
         if self.words:
             params["include_words"] = "true"
+
         if self.timestamps:
             params["include_timestamps"] = "true"
+
         if self.language:
             params["include_language"] = "true"
+
         if self.confidence and not streaming:
             params["include_confidence"] = "true"
 
@@ -185,7 +194,8 @@ class TranscriptOptions:
 
 @dataclass(frozen=True)
 class BiasingOptions:
-    """How to bias recognition toward expected terminology.
+    """
+    How to bias recognition toward expected terminology.
 
     See https://docs.reson8.dev/speech-to-text/features/custom-models/.
 
@@ -230,10 +240,13 @@ class STTOptions:
         changes: dict[str, Any] = {}
         if is_given(language):
             changes["language"] = normalize_languages(language)
+
         if is_given(turn):
             changes["turn"] = turn
+
         if is_given(transcript):
             changes["transcript"] = transcript
+
         if is_given(biasing):
             changes["biasing"] = biasing
 
@@ -245,10 +258,12 @@ class STTOptions:
             **self.transcript.query_params(streaming=streaming),
             **self.biasing.query_params(),
         }
+
         # When omitted, Reson8 auto-detects the spoken language; otherwise this
         # pins recognition to the given code(s) (comma-joined for multiple).
         if self.language:
             params["language"] = self.language
+
         if streaming:
             params.update(self.turn.query_params())
 
@@ -388,12 +403,14 @@ class STT(stt.STT):
         transcript: NotGivenOr[TranscriptOptions] = NOT_GIVEN,
         biasing: NotGivenOr[BiasingOptions] = NOT_GIVEN,
     ) -> None:
-        """Change settings at runtime. Live streams reconnect to apply them.
+        """
+        Change settings at runtime. Live streams reconnect to apply them.
 
         :class:`AudioOptions` is deliberately absent: the input resampler is
         built when a stream opens, so changing the rate mid-stream would
         describe the audio to Reson8 as something it is not.
         """
+
         self._opts = self._opts.merged(
             language=language, turn=turn, transcript=transcript, biasing=biasing
         )
@@ -409,7 +426,6 @@ class STT(stt.STT):
         language: NotGivenOr[str | Sequence[str]] = NOT_GIVEN,
         conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS,
     ) -> SpeechStream:
-        # STTOptions is frozen, so live streams can share it and rebind their own
         opts = self._opts.merged(language=language) if is_given(language) else self._opts
         stream = SpeechStream(
             stt=self,
@@ -432,7 +448,6 @@ class STT(stt.STT):
         lang = normalize_languages(language) if is_given(language) else self._opts.language
         frames = rtc.combine_audio_frames(buffer)
 
-        # the batch path posts raw frames, so describe them as they actually are
         opts = replace(
             self._opts,
             language=lang,
@@ -657,8 +672,6 @@ class SpeechStream(stt.RecognizeStream):
             self._start_speaking()
 
         elif msg_type == "turn_end_candidate":
-            # eager end-of-turn: surface as a preflight transcript that the
-            # agent can act on speculatively before the turn is confirmed.
             self._start_speaking()
             self._candidate = build_speech_data(
                 msg,
@@ -675,12 +688,12 @@ class SpeechStream(stt.RecognizeStream):
                 )
 
         elif msg_type == "turn_continuation":
-            # the speaker resumed: the previous candidate is no longer final.
             self._candidate = None
 
         elif msg_type == "turn_end":
             candidate = self._candidate
             self._candidate = None
+
             if candidate is not None:
                 self._event_ch.send_nowait(
                     stt.SpeechEvent(
@@ -689,6 +702,7 @@ class SpeechStream(stt.RecognizeStream):
                         alternatives=[candidate],
                     )
                 )
+
             if self._speaking:
                 self._speaking = False
                 self._event_ch.send_nowait(stt.SpeechEvent(type=stt.SpeechEventType.END_OF_SPEECH))
@@ -711,5 +725,6 @@ class SpeechStream(stt.RecognizeStream):
     def _start_speaking(self) -> None:
         if self._speaking:
             return
+
         self._speaking = True
         self._event_ch.send_nowait(stt.SpeechEvent(type=stt.SpeechEventType.START_OF_SPEECH))
