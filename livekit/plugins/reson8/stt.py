@@ -47,6 +47,16 @@ KEEPALIVE_INTERVAL = 30.0
 _SEND_CHUNK_MS = 100
 
 
+def _resolve_base_url(base_url: str | None) -> str:
+    resolved = base_url or os.environ.get("RESON8_BASE_URL")
+
+    if not resolved and (legacy := os.environ.get("RESON8_API_URL")):
+        logger.warning("RESON8_API_URL is deprecated, use RESON8_BASE_URL instead")
+        resolved = legacy
+
+    return (resolved or DEFAULT_API_URL).rstrip("/")
+
+
 def _check_probability(name: str, value: float | None) -> None:
     if value is not None and not 0.0 <= value <= 1.0:
         raise ValueError(f"{name} must be between 0 and 1, got {value}")
@@ -368,9 +378,7 @@ class STT(stt.STT):
             )
 
         self._api_key = api_key
-        self._base_url = (base_url or os.environ.get("RESON8_BASE_URL", DEFAULT_API_URL)).rstrip(
-            "/"
-        )
+        self._base_url = _resolve_base_url(base_url)
         self._opts = STTOptions(
             language=normalize_languages(language),
             turn=turn or TurnOptions(),
