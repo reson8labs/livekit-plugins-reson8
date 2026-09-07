@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import asyncio
 import json
 
 import pytest
-import websockets
 from livekit.agents.types import APIConnectOptions
 
 from livekit import rtc
@@ -67,41 +65,35 @@ def test_sane_thresholds_are_quiet(eager, final, caplog):
     assert not caplog.records
 
 
-async def test_flush_sends_flush_request():
+async def test_flush_sends_flush_request(reson8_server, client_session):
     """LiveKit's flush sentinel must become a flush_request on the wire.
 
     Without this the caller has no way to commit a turn early, and is stuck
     waiting for final_turn_probability to be crossed.
     """
-    received: list[str] = []
-    got_flush = asyncio.Event()
+    server = await reson8_server()
+    stream = reson8.STT(
+        api_key="k",
+        api_url=server.api_url,
+        language="es",
+        http_session=client_session,
+    ).stream(conn_options=APIConnectOptions(max_retry=0))
 
-    async def handler(ws):
-        async for msg in ws:
-            if isinstance(msg, str):
-                received.append(msg)
-                got_flush.set()
-
-    async with websockets.serve(handler, "127.0.0.1", 0) as server:
-        port = server.sockets[0].getsockname()[1]
-        stream = reson8.STT(api_key="k", api_url=f"http://127.0.0.1:{port}", language="es").stream(
-            conn_options=APIConnectOptions(max_retry=0)
+    stream.push_frame(
+        rtc.AudioFrame(
+            data=b"\x00\x00" * 1600,
+            sample_rate=16000,
+            num_channels=1,
+            samples_per_channel=1600,
         )
+    )
+    stream.flush()
 
-        stream.push_frame(
-            rtc.AudioFrame(
-                data=b"\x00\x00" * 1600,
-                sample_rate=16000,
-                num_channels=1,
-                samples_per_channel=1600,
-            )
-        )
-        stream.flush()
+    try:
+        await server.wait_for_text()
+    finally:
+        await stream.aclose()
 
-        try:
-            await asyncio.wait_for(got_flush.wait(), timeout=10)
-        finally:
-            await stream.aclose()
-
-    assert received, "no text frame reached the server"
-    assert json.loads(received[0]) == {"type": "flush_request"}
+    assert json.loads(server.text[0]) == {"type": "flush_request"}
+    assert server.audio, "no audio frame reached the server"
+    assert server.query["language"] == "es"

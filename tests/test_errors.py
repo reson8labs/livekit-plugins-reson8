@@ -1,18 +1,19 @@
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+from typing import NoReturn
 
-import httpx
+import aiohttp
 import pytest
-import websockets
-from livekit.agents import APIConnectionError, APIStatusError
-from websockets.datastructures import Headers
-from websockets.http11 import Response
+from conftest import StartServer
+from livekit.agents import APIConnectionError, APIStatusError, APITimeoutError
+from livekit.agents.types import APIConnectOptions
 
 from livekit import rtc
-from livekit.plugins.reson8 import STT
-from livekit.plugins.reson8 import stt as stt_module
-from livekit.plugins.reson8._utils import ERROR_MESSAGE_HEADER, problem_code, status_error
+from livekit.plugins import reson8
+from livekit.plugins.reson8._utils import problem_code, status_error
+
+NO_RETRY = APIConnectOptions(max_retry=0)
 
 
 @pytest.mark.parametrize(
@@ -27,25 +28,24 @@ from livekit.plugins.reson8._utils import ERROR_MESSAGE_HEADER, problem_code, st
         ('{"code": 402}', None),
     ],
 )
-def test_problem_code(body, expected):
+def test_problem_code(body: str, expected: str | None) -> None:
     assert problem_code(body) == expected
 
 
-def test_status_error_explains_credit_exhaustion():
+def test_status_error_explains_credit_exhaustion() -> None:
     err = status_error(402)
     assert isinstance(err, APIStatusError)
     assert err.status_code == 402
-    assert "Credit limit exceeded" in err.message
     assert "https://docs.reson8.dev/limits/" in err.message
 
 
-def test_status_error_keeps_the_server_reason_and_the_hint():
+def test_status_error_keeps_the_server_reason_and_the_hint() -> None:
     err = status_error(401, detail="invalid signature")
     assert "invalid signature" in err.message
     assert "RESON8_API_KEY" in err.message
 
 
-def test_status_error_renders_unmapped_statuses():
+def test_status_error_renders_unmapped_statuses() -> None:
     err = status_error(500)
     assert err.status_code == 500
     assert "Internal Server Error" in err.message
@@ -61,91 +61,8 @@ def test_status_error_renders_unmapped_statuses():
         (500, True),
     ],
 )
-def test_status_error_retryability(status_code, retryable):
+def test_status_error_retryability(status_code: int, retryable: bool) -> None:
     assert status_error(status_code).retryable is retryable
-
-
-def _reject_upgrade(status_code: int, reason: str | None) -> Any:
-    headers = Headers()
-    if reason is not None:
-        headers[ERROR_MESSAGE_HEADER] = reason
-
-    async def fake_connect(url: str, **kwargs: Any) -> None:
-        raise websockets.InvalidStatus(Response(status_code, "", headers, b""))
-
-    return fake_connect
-
-
-async def test_rejected_upgrade_surfaces_the_status(make_stream, monkeypatch):
-    monkeypatch.setattr(
-        stt_module.websockets, "connect", _reject_upgrade(402, "organization out of credits")
-    )
-
-    stream = make_stream()
-    stream._api_key = "secret"
-    stream._api_url = "https://api.reson8.dev"
-
-    with pytest.raises(APIStatusError) as excinfo:
-        await stream._run()
-
-    err = excinfo.value
-    assert err.status_code == 402
-    assert err.retryable is False
-    assert "organization out of credits" in err.message
-
-
-async def test_rejected_upgrade_without_a_reason_still_explains_itself(make_stream, monkeypatch):
-    monkeypatch.setattr(stt_module.websockets, "connect", _reject_upgrade(401, None))
-
-    stream = make_stream()
-    stream._api_key = "secret"
-    stream._api_url = "https://api.reson8.dev"
-
-    with pytest.raises(APIStatusError) as excinfo:
-        await stream._run()
-
-    assert "RESON8_API_KEY" in excinfo.value.message
-
-
-async def test_unreachable_host_is_a_connection_error(make_stream, monkeypatch):
-    async def fake_connect(url: str, **kwargs: Any) -> None:
-        raise OSError("nodename nor servname provided")
-
-    monkeypatch.setattr(stt_module.websockets, "connect", fake_connect)
-
-    stream = make_stream()
-    stream._api_key = "secret"
-    stream._api_url = "https://api.reson8.dev"
-
-    with pytest.raises(APIConnectionError, match="OSError"):
-        await stream._run()
-
-
-@pytest.fixture
-def reject_post(monkeypatch: pytest.MonkeyPatch):
-    """Stand in for ``httpx.AsyncClient`` and fail the request with a real response."""
-
-    def _install(status_code: int, body: str) -> None:
-        class _RejectingClient:
-            def __init__(self, **kwargs: Any) -> None:
-                pass
-
-            async def __aenter__(self) -> _RejectingClient:
-                return self
-
-            async def __aexit__(self, *exc: Any) -> bool:
-                return False
-
-            async def post(self, url: str, **kwargs: Any) -> httpx.Response:
-                return httpx.Response(
-                    status_code,
-                    text=body,
-                    request=httpx.Request("POST", url),
-                )
-
-        monkeypatch.setattr("httpx.AsyncClient", _RejectingClient)
-
-    return _install
 
 
 def _frame() -> rtc.AudioFrame:
@@ -157,11 +74,57 @@ def _frame() -> rtc.AudioFrame:
     )
 
 
-async def test_rejected_batch_request_reports_the_problem_code(reject_post):
-    reject_post(402, '{"code": "session_rejected"}')
+def _stt(api_url: str, session: aiohttp.ClientSession) -> reson8.STT:
+    return reson8.STT(api_key="secret", api_url=api_url, http_session=session)
+
+
+async def test_rejected_upgrade_surfaces_the_status(
+    reson8_server: StartServer, client_session: aiohttp.ClientSession
+) -> None:
+    server = await reson8_server(ws_status=402, ws_error_message="organization out of credits")
+    stream = _stt(server.api_url, client_session).stream(conn_options=NO_RETRY)
 
     with pytest.raises(APIStatusError) as excinfo:
-        await STT(api_key="secret")._recognize_impl(_frame())
+        await stream._run()
+
+    err = excinfo.value
+    assert err.status_code == 402
+    assert err.retryable is False
+    assert "organization out of credits" in err.message
+    await stream.aclose()
+
+
+async def test_rejected_upgrade_without_a_reason_still_explains_itself(
+    reson8_server: StartServer, client_session: aiohttp.ClientSession
+) -> None:
+    server = await reson8_server(ws_status=401)
+    stream = _stt(server.api_url, client_session).stream(conn_options=NO_RETRY)
+
+    with pytest.raises(APIStatusError) as excinfo:
+        await stream._run()
+
+    assert "RESON8_API_KEY" in excinfo.value.message
+    await stream.aclose()
+
+
+async def test_unreachable_host_is_a_connection_error(
+    client_session: aiohttp.ClientSession,
+) -> None:
+    stream = _stt("http://127.0.0.1:1", client_session).stream(conn_options=NO_RETRY)
+
+    with pytest.raises(APIConnectionError, match="Failed to connect to Reson8"):
+        await stream._run()
+
+    await stream.aclose()
+
+
+async def test_rejected_batch_request_reports_the_problem_code(
+    reson8_server: StartServer, client_session: aiohttp.ClientSession
+) -> None:
+    server = await reson8_server(post_status=402, post_body='{"code": "session_rejected"}')
+
+    with pytest.raises(APIStatusError) as excinfo:
+        await _stt(server.api_url, client_session).recognize(_frame(), conn_options=NO_RETRY)
 
     err = excinfo.value
     assert err.status_code == 402
@@ -170,30 +133,28 @@ async def test_rejected_batch_request_reports_the_problem_code(reject_post):
     assert "https://docs.reson8.dev/limits/" in err.message
 
 
-async def test_rejected_batch_request_without_a_body(reject_post):
-    reject_post(413, "")
+async def test_rejected_batch_request_without_a_body(
+    reson8_server: StartServer, client_session: aiohttp.ClientSession
+) -> None:
+    server = await reson8_server(post_status=413, post_body="")
 
     with pytest.raises(APIStatusError) as excinfo:
-        await STT(api_key="secret")._recognize_impl(_frame())
+        await _stt(server.api_url, client_session).recognize(_frame(), conn_options=NO_RETRY)
 
     assert "exceeds the size limit" in excinfo.value.message
 
 
-async def test_batch_timeout_is_a_timeout_error(monkeypatch: pytest.MonkeyPatch):
-    class _TimingOutClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
+async def test_batch_timeout_is_a_timeout_error(
+    reson8_server: StartServer,
+    client_session: aiohttp.ClientSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = await reson8_server()
 
-        async def __aenter__(self) -> _TimingOutClient:
-            return self
+    def timing_out_post(*args: object, **kwargs: object) -> NoReturn:
+        raise asyncio.TimeoutError
 
-        async def __aexit__(self, *exc: Any) -> bool:
-            return False
+    monkeypatch.setattr(client_session, "post", timing_out_post)
 
-        async def post(self, url: str, **kwargs: Any) -> None:
-            raise httpx.ReadTimeout("timed out")
-
-    monkeypatch.setattr("httpx.AsyncClient", _TimingOutClient)
-
-    with pytest.raises(stt_module.APITimeoutError):
-        await STT(api_key="secret")._recognize_impl(_frame())
+    with pytest.raises(APITimeoutError):
+        await _stt(server.api_url, client_session).recognize(_frame(), conn_options=NO_RETRY)

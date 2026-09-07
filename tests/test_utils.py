@@ -9,8 +9,8 @@ from livekit.plugins.reson8._utils import (
     _word_time,
     auth_headers,
     build_speech_data,
+    build_url,
     normalize_languages,
-    to_ws_base,
 )
 
 
@@ -52,13 +52,23 @@ def test_normalize_languages_rejects_unsupported(value):
 @pytest.mark.parametrize(
     ("api_url", "expected"),
     [
-        ("https://api.reson8.dev", "wss://api.reson8.dev"),
-        ("http://localhost:8080", "ws://localhost:8080"),
-        ("https://api.reson8.dev/", "wss://api.reson8.dev"),
+        ("https://api.reson8.dev", "wss://api.reson8.dev/turns?a=1"),
+        ("http://localhost:8080", "ws://localhost:8080/turns?a=1"),
+        ("https://api.reson8.dev/", "wss://api.reson8.dev/turns?a=1"),
     ],
 )
-def test_to_ws_base(api_url, expected):
-    assert to_ws_base(api_url) == expected
+def test_build_url_swaps_the_scheme_for_websockets(api_url, expected):
+    assert build_url(api_url, "/turns", {"a": "1"}, websocket=True) == expected
+
+
+def test_build_url_leaves_http_alone():
+    url = build_url("https://api.reson8.dev", "/prerecorded", {"a": "1", "b": "2"})
+    assert url == "https://api.reson8.dev/prerecorded?a=1&b=2"
+
+
+def test_build_url_encodes_params():
+    url = build_url("https://api.reson8.dev", "/turns", {"language": "nl,de"})
+    assert url == "https://api.reson8.dev/turns?language=nl%2Cde"
 
 
 def test_confidence_passes_through_documented_range():
