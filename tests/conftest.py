@@ -13,23 +13,16 @@ from aiohttp import web
 from livekit.agents import stt
 
 from livekit.plugins.reson8._utils import ERROR_MESSAGE_HEADER, PRERECORDED_PATH, TURNS_PATH
-from livekit.plugins.reson8.stt import SpeechStream, STTOptions
+from livekit.plugins.reson8.stt import (
+    SpeechStream,
+    STTOptions,
+)
 
 
 def _make_opts(**overrides: object) -> STTOptions:
-    defaults: dict[str, object] = {
-        "language": None,
-        "sample_rate": 16000,
-        "encoding": "pcm_s16le",
-        "channels": 1,
-        "custom_model_id": None,
-        "include_timestamps": False,
-        "include_words": False,
-        "include_confidence": False,
-        "include_language": False,
-    }
-    defaults.update(overrides)
-    return STTOptions(**defaults)  # type: ignore[arg-type]
+    """``STTOptions`` with defaults for whatever a test does not care about."""
+
+    return STTOptions(**overrides)  # type: ignore[arg-type]
 
 
 class FakeChan:

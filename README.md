@@ -56,6 +56,13 @@ stt = reson8.STT(
     api_key="your-api-key",   # or set RESON8_API_KEY
     # language is auto-detected when omitted; pass one or more supported codes to pin it
 )
+
+stt = reson8.STT(
+    language="nl",
+    turn=reson8.TurnOptions(final_probability=0.7),
+    transcript=reson8.TranscriptOptions(words=True, language=True),
+    biasing=reson8.BiasingOptions(custom_model_id="my-model"),
+)
 ```
 
 ### With a Voice Agent
@@ -92,30 +99,63 @@ print(event.alternatives[0].text)
 | Parameter | Env var | Default |
 |---|---|---|
 | `api_key` | `RESON8_API_KEY` | *required* |
-| `api_url` | `RESON8_API_URL` | `https://api.reson8.dev` |
+| `base_url` | `RESON8_BASE_URL` | `https://api.reson8.dev` |
 | `language` | — | `None` (auto-detect; one or more `SupportedLanguage` codes, e.g. `"nl,de"` or `["nl", "de"]`) |
-| `sample_rate` | — | `16000` |
-| `encoding` | — | `"pcm_s16le"` |
-| `channels` | — | `1` |
-| `custom_model_id` | — | `None` (custom model for recognition biasing) |
-| `include_timestamps` | — | `False` |
-| `include_words` | — | `False` |
-| `include_confidence` | — | `False` (batch recognition) |
-| `include_language` | — | `False` (report the detected language) |
-| `eager_turn_probability` | — | `None` (server default `0.5`) |
-| `final_turn_probability` | — | `None` (server default `0.92`) |
+| `turn` | — | `TurnOptions()` |
+| `audio` | — | `AudioOptions()` |
+| `transcript` | — | `TranscriptOptions()` |
+| `biasing` | — | `BiasingOptions()` |
+| `http_session` | — | the session managed by the agent framework |
 
-`STT.update_options(...)` changes settings at runtime; active streaming sessions
-reconnect automatically to apply them.
+### `TurnOptions`
+
+The main lever on end-of-turn latency. `None` leaves the server's default.
+
+| Field | Default | |
+|---|---|---|
+| `eager_probability` | `None` (server: `0.5`) | confidence at which the preflight transcript is emitted |
+| `final_probability` | `None` (server: `0.92`) | confidence at which the turn commits |
+
+### `AudioOptions`
+
+Describes the audio sent to Reson8; it does not convert it. LiveKit supplies
+16-bit PCM, so `encoding` should stay at its default unless the frames you push
+really are something else.
+
+| Field | Default | |
+|---|---|---|
+| `sample_rate` | `16000` | streaming input is resampled to this |
+| `encoding` | `"pcm_s16le"` | one of `auto`, `pcm_s16le`, `mulaw`, `alaw` |
+| `num_channels` | `1` | 1 to 10 |
+
+### `TranscriptOptions`
+
+| Field | Default | |
+|---|---|---|
+| `words` | `False` | word-level results, each with its own timing |
+| `timestamps` | `False` | start and end times on the transcript |
+| `language` | `False` | the detected language code |
+| `confidence` | `False` | per-word confidence, batch recognition only |
+
+### `BiasingOptions`
+
+| Field | Default | |
+|---|---|---|
+| `custom_model_id` | `None` | a custom model to recognize against |
+
+`STT.update_options(...)` takes the same sections and changes them at runtime;
+active streaming sessions reconnect automatically to apply them. `AudioOptions`
+is fixed for the life of a stream, since the input resampler is built when the
+stream opens.
 
 ## Turn detection
 
 Reson8 decides turn boundaries by confidence: it emits the preflight transcript
-at `eager_turn_probability` and commits the turn at `final_turn_probability`.
-Lower `final_turn_probability` to commit sooner, at the risk of cutting off
-longer utterances.
+at `turn.eager_probability` and commits the turn at `turn.final_probability`.
+Lower `final_probability` to commit sooner, at the risk of cutting off longer
+utterances.
 
-`flush()` commits the current turn immediately, keeping `final_turn_probability`
+`flush()` commits the current turn immediately, keeping `final_probability`
 intact. LiveKit never calls it for you.
 
 See [Turns](https://docs.reson8.dev/speech-to-text/turns/) for how

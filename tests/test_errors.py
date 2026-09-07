@@ -75,7 +75,7 @@ def _frame() -> rtc.AudioFrame:
 
 
 def _stt(api_url: str, session: aiohttp.ClientSession) -> reson8.STT:
-    return reson8.STT(api_key="secret", api_url=api_url, http_session=session)
+    return reson8.STT(api_key="secret", base_url=api_url, http_session=session)
 
 
 async def test_rejected_upgrade_surfaces_the_status(

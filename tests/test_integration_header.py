@@ -22,7 +22,7 @@ async def test_prerecorded_request_is_attributed(
     reson8_server: StartServer, client_session: aiohttp.ClientSession
 ) -> None:
     server = await reson8_server()
-    stt = reson8.STT(api_key="secret", api_url=server.api_url, http_session=client_session)
+    stt = reson8.STT(api_key="secret", base_url=server.api_url, http_session=client_session)
 
     frame = rtc.AudioFrame(
         data=b"\x00\x00" * 160,
@@ -41,7 +41,7 @@ async def test_turns_handshake_is_attributed(
     reson8_server: StartServer, client_session: aiohttp.ClientSession
 ) -> None:
     server = await reson8_server()
-    stt = reson8.STT(api_key="secret", api_url=server.api_url, http_session=client_session)
+    stt = reson8.STT(api_key="secret", base_url=server.api_url, http_session=client_session)
 
     stream = stt.stream(conn_options=NO_RETRY)
     try:

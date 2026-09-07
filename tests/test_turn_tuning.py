@@ -13,7 +13,7 @@ from livekit.plugins.reson8.stt import TurnOptions
 
 
 def test_thresholds_reach_the_query_string(make_opts: MakeOpts) -> None:
-    opts = make_opts(turn=TurnOptions(eager_turn_probability=0.35, final_turn_probability=0.7))
+    opts = make_opts(turn=TurnOptions(eager_probability=0.35, final_probability=0.7))
     params = opts.query_params(streaming=True)
     assert params["eager_turn_probability"] == "0.35"
     assert params["final_turn_probability"] == "0.7"
@@ -21,7 +21,7 @@ def test_thresholds_reach_the_query_string(make_opts: MakeOpts) -> None:
 
 def test_thresholds_are_omitted_for_batch(make_opts: MakeOpts) -> None:
     """The thresholds only exist on the turns endpoint."""
-    opts = make_opts(turn=TurnOptions(eager_turn_probability=0.35, final_turn_probability=0.7))
+    opts = make_opts(turn=TurnOptions(eager_probability=0.35, final_probability=0.7))
     params = opts.query_params(streaming=False)
     assert "eager_turn_probability" not in params
     assert "final_turn_probability" not in params
@@ -29,8 +29,8 @@ def test_thresholds_are_omitted_for_batch(make_opts: MakeOpts) -> None:
 
 @pytest.mark.parametrize("value", [-0.1, 1.1])
 def test_out_of_range_probability_raises(value: float) -> None:
-    with pytest.raises(ValueError, match="between 0 and 1"):
-        reson8.STT(api_key="k", final_turn_probability=value)
+    with pytest.raises(ValueError, match="must be between 0 and 1"):
+        reson8.STT(api_key="k", turn=TurnOptions(final_probability=value))
 
 
 @pytest.mark.parametrize(
@@ -43,7 +43,7 @@ def test_out_of_range_probability_raises(value: float) -> None:
 )
 def test_inverted_thresholds_raise(eager: float, final: float | None) -> None:
     with pytest.raises(ValueError, match="must be below"):
-        TurnOptions(eager_turn_probability=eager, final_turn_probability=final)
+        TurnOptions(eager_probability=eager, final_probability=final)
 
 
 @pytest.mark.parametrize(
@@ -58,7 +58,7 @@ def test_equal_thresholds_warn(
 ) -> None:
     """Equal thresholds are legal but pointless: the preflight has no lead."""
     with caplog.at_level("WARNING"):
-        TurnOptions(eager_turn_probability=eager, final_turn_probability=final)
+        TurnOptions(eager_probability=eager, final_probability=final)
     assert caplog.records
 
 
@@ -67,7 +67,7 @@ def test_sane_thresholds_are_quiet(
     eager: float | None, final: float | None, caplog: pytest.LogCaptureFixture
 ) -> None:
     with caplog.at_level("WARNING"):
-        TurnOptions(eager_turn_probability=eager, final_turn_probability=final)
+        TurnOptions(eager_probability=eager, final_probability=final)
     assert not caplog.records
 
 
@@ -82,7 +82,7 @@ async def test_flush_sends_flush_request(
     server = await reson8_server()
     stream = reson8.STT(
         api_key="k",
-        api_url=server.api_url,
+        base_url=server.api_url,
         language="es",
         http_session=client_session,
     ).stream(conn_options=APIConnectOptions(max_retry=0))

@@ -33,7 +33,7 @@ async def test_turn_lifecycle_over_the_wire(
     server = await reson8_server()
     stream = reson8.STT(
         api_key="k",
-        api_url=server.api_url,
+        base_url=server.api_url,
         language="en",
         http_session=client_session,
     ).stream(conn_options=NO_RETRY)
@@ -75,7 +75,7 @@ async def test_usage_is_not_reported_without_audio(
     """A turn that carried no audio must not emit a zero-duration usage event."""
 
     server = await reson8_server()
-    stream = reson8.STT(api_key="k", api_url=server.api_url, http_session=client_session).stream(
+    stream = reson8.STT(api_key="k", base_url=server.api_url, http_session=client_session).stream(
         conn_options=NO_RETRY
     )
     log = EventLog(stream)
@@ -105,7 +105,7 @@ async def test_reconnect_discards_in_flight_turn_state(
     """
 
     server = await reson8_server()
-    stt_impl = reson8.STT(api_key="k", api_url=server.api_url, http_session=client_session)
+    stt_impl = reson8.STT(api_key="k", base_url=server.api_url, http_session=client_session)
     stream = stt_impl.stream(conn_options=NO_RETRY)
     log = EventLog(stream)
 
@@ -115,7 +115,7 @@ async def test_reconnect_discards_in_flight_turn_state(
     opening = await log.wait_for(2)
     assert opening[1].type == SpeechEventType.PREFLIGHT_TRANSCRIPT
 
-    stream.update_options(include_words=True)
+    stream.update_options(transcript=reson8.TranscriptOptions(words=True))
     await server.wait_for_connections(2)
 
     try:
