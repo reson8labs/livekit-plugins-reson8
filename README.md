@@ -136,12 +136,32 @@ really are something else.
 | `timestamps` | `False` | start and end times on the transcript |
 | `language` | `False` | the detected language code |
 | `confidence` | `False` | per-word confidence, batch recognition only |
+| `filler_mode` | `None` (server: `natural`) | `clean` removes filler words, `natural` lets the model decide, `verbatim` preserves them |
 
 ### `BiasingOptions`
+
+Biasing is not free: phrases and patterns can *degrade* transcription of audio
+that does not contain them, and stronger biasing introduces irrelevant terms.
 
 | Field | Default | |
 |---|---|---|
 | `custom_model_id` | `None` | a custom model to recognize against |
+| `phrases` | `None` | terms to bias toward, at most 250; needs no custom model |
+| `strength` | `None` (server: `0.45`) | how strongly to bias; raise only when expected terminology is not being recovered |
+| `patterns` | `None` | shapes for short alphanumeric tokens to recover, e.g. `"AMZ[0-9]{6}"` |
+
+```python
+stt = reson8.STT(
+    biasing=reson8.BiasingOptions(
+        phrases=["Reson8", "LiveKit"],
+        # an order code, so the digits are not heard as words
+        patterns=["AMZ[0-9]{6}"],
+    ),
+)
+```
+
+See [custom models](https://docs.reson8.dev/speech-to-text/features/custom-models/)
+and [patterns](https://docs.reson8.dev/speech-to-text/features/patterns/).
 
 `STT.update_options(...)` takes the same sections and changes them at runtime;
 active streaming sessions reconnect automatically to apply them. `AudioOptions`
