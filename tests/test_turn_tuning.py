@@ -99,8 +99,7 @@ async def test_flush_sends_flush_request():
         stream.flush()
 
         try:
-            async with asyncio.timeout(10):
-                await got_flush.wait()
+            await asyncio.wait_for(got_flush.wait(), timeout=10)
         finally:
             await stream.aclose()
 

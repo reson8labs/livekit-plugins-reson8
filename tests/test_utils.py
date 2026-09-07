@@ -4,6 +4,7 @@ import pytest
 from livekit.agents.types import NOT_GIVEN
 
 from livekit.plugins.reson8._utils import (
+    SupportedLanguages,
     _confidence,
     _word_time,
     auth_headers,
@@ -11,6 +12,13 @@ from livekit.plugins.reson8._utils import (
     normalize_languages,
     to_ws_base,
 )
+
+
+def test_supported_languages_behave_like_plain_strings():
+    assert SupportedLanguages.DUTCH == "nl"
+    assert str(SupportedLanguages.DUTCH) == "nl"
+    assert f"{SupportedLanguages.DUTCH}" == "nl"
+    assert ", ".join(sorted(SupportedLanguages)) == "de, en, es, fr, fy, it, nl, pl, pt, sv"
 
 
 def test_auth_headers():

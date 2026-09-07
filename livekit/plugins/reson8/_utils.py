@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from enum import StrEnum
+from enum import Enum
 from typing import Any
 
 from livekit.agents import APIStatusError, LanguageCode, create_api_error_from_http, stt
@@ -26,7 +26,7 @@ _STATUS_HINTS = {
 }
 
 
-class SupportedLanguages(StrEnum):
+class SupportedLanguages(str, Enum):
     """The languages Reson8 can recognize, valued by ISO 639-1 code.
 
     Members are strings (``SupportedLanguages.DUTCH == "nl"``), so they can be
@@ -45,6 +45,12 @@ class SupportedLanguages(StrEnum):
     POLISH = "pl"
     PORTUGUESE = "pt"
     SWEDISH = "sv"
+
+    def __str__(self) -> str:
+        return str.__str__(self)
+
+    def __format__(self, format_spec: str) -> str:
+        return str.__format__(self, format_spec)
 
 
 def normalize_languages(value: str | Sequence[str] | None) -> str | None:
