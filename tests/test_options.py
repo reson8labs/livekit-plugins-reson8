@@ -93,9 +93,14 @@ def test_the_documented_channel_bounds_are_accepted(num_channels: int) -> None:
     assert AudioOptions(num_channels=num_channels).num_channels == num_channels
 
 
-@pytest.mark.parametrize("encoding", ["auto", "pcm_s16le", "mulaw", "alaw"])
-def test_every_documented_encoding_is_accepted(encoding: str) -> None:
+@pytest.mark.parametrize("encoding", ["pcm_s16le", "mulaw", "alaw"])
+def test_every_offered_encoding_is_accepted(encoding: str) -> None:
     assert AudioOptions(encoding=encoding).encoding == encoding  # type: ignore[arg-type]
+
+
+def test_auto_encoding_is_not_offered() -> None:
+    with pytest.raises(ValueError, match=r"(?i)unsupported encoding"):
+        AudioOptions(encoding="auto")  # type: ignore[arg-type]
 
 
 def _frame(num_channels: int) -> rtc.AudioFrame:
@@ -174,15 +179,20 @@ def test_biasing_applies_to_both_endpoints(make_opts: MakeOpts, streaming: bool)
     """Unlike diarization, all of these are documented on turns and prerecorded."""
 
     opts = make_opts(
-        biasing=BiasingOptions(phrases=["a"], patterns=["[0-9]{4}"], strength=0.5),
+        biasing=BiasingOptions(phrases=["a"], strength=0.5),
         transcript=TranscriptOptions(filler_mode="clean"),
     )
     params = opts.query_params(streaming=streaming)
 
     assert params["phrases"] == "a"
-    assert params["patterns"] == "[0-9]{4}"
     assert params["bias_strength"] == "0.5"
     assert params["filler_mode"] == "clean"
+
+
+@pytest.mark.parametrize("streaming", [True, False])
+def test_patterns_apply_to_both_endpoints(make_opts: MakeOpts, streaming: bool) -> None:
+    opts = make_opts(biasing=BiasingOptions(patterns=["[0-9]{4}"]))
+    assert opts.query_params(streaming=streaming)["patterns"] == "[0-9]{4}"
 
 
 def test_omitted_biasing_sends_nothing(make_opts: MakeOpts) -> None:
@@ -228,3 +238,40 @@ def test_negative_strength_raises() -> None:
 def test_unsupported_filler_mode_raises() -> None:
     with pytest.raises(ValueError, match=r"(?i)unsupported filler_mode"):
         TranscriptOptions(filler_mode="loud")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("build", "other"),
+    [
+        pytest.param(
+            lambda: BiasingOptions(patterns=["[0-9]{4}"], phrases=["reson8"]),
+            "phrases",
+            id="phrases",
+        ),
+        pytest.param(
+            lambda: BiasingOptions(patterns=["[0-9]{4}"], custom_model_id="m1"),
+            "custom_model_id",
+            id="custom-model",
+        ),
+    ],
+)
+def test_patterns_cannot_be_combined_with_biasing(
+    build: Callable[[], BiasingOptions], other: str
+) -> None:
+    with pytest.raises(ValueError, match=f"patterns cannot be combined with {other}"):
+        build()
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        pytest.param(lambda: BiasingOptions(patterns=["[0-9]{4}"]), id="patterns-only"),
+        pytest.param(lambda: BiasingOptions(phrases=["reson8"]), id="phrases-only"),
+        pytest.param(
+            lambda: BiasingOptions(phrases=["reson8"], custom_model_id="m1"),
+            id="phrases-and-model",
+        ),
+    ],
+)
+def test_biasing_combinations_the_server_accepts(build: Callable[[], BiasingOptions]) -> None:
+    assert build() is not None

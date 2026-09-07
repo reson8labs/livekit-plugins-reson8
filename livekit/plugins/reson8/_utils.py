@@ -39,11 +39,12 @@ See https://docs.reson8.dev/speech-to-text/features/languages/.
 SUPPORTED_LANGUAGES: tuple[str, ...] = get_args(SupportedLanguage)
 """``SupportedLanguage`` as a runtime tuple, for validation and error messages."""
 
-Encoding = Literal["auto", "pcm_s16le", "mulaw", "alaw"]
-"""Encodings the streaming and batch endpoints both accept.
+Encoding = Literal["pcm_s16le", "mulaw", "alaw"]
+"""Raw encodings this plugin can describe.
 
-The container formats Reson8 documents for prerecorded audio are not listed:
-this plugin always sends raw frames, never a container. See
+Reson8 also accepts container formats and an ``auto`` mode that detects the
+format from the container header, but this plugin always sends raw frames with
+no header, so neither can apply. See
 https://docs.reson8.dev/speech-to-text/features/audio-formats/.
 """
 

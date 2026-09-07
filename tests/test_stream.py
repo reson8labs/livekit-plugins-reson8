@@ -6,23 +6,6 @@ from livekit.agents import stt
 SpeechEventType = stt.SpeechEventType
 
 
-def test_turn_continuation_discards_candidate(make_stream: MakeStream) -> None:
-    stream = make_stream(language="en")
-
-    stream._process_message({"type": "turn_start"})
-    stream._process_message({"type": "turn_end_candidate", "text": "maybe done"})
-    stream._process_message({"type": "turn_continuation"})
-    stream._process_message({"type": "turn_end"})
-
-    # the continuation cleared the candidate, so no FINAL_TRANSCRIPT is emitted,
-    # but the turn still ends with END_OF_SPEECH
-    assert [e.type for e in emitted(stream)] == [
-        SpeechEventType.START_OF_SPEECH,
-        SpeechEventType.PREFLIGHT_TRANSCRIPT,
-        SpeechEventType.END_OF_SPEECH,
-    ]
-
-
 def test_start_of_speech_emitted_once(make_stream: MakeStream) -> None:
     stream = make_stream()
 

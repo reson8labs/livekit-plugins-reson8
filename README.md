@@ -147,7 +147,7 @@ that does not contain them, and stronger biasing introduces irrelevant terms.
 |---|---|---|
 | `custom_model_id` | `None` | a custom model to recognize against |
 | `phrases` | `None` | terms to bias toward, at most 250; needs no custom model |
-| `strength` | `None` (server: `0.45`) | how strongly to bias; raise only when expected terminology is not being recovered |
+| `strength` | `None` (server: `0.45`) | additive boost on the model's trained calibration. Raise only when expected terminology is not being recovered |
 | `patterns` | `None` | shapes for short alphanumeric tokens to recover, e.g. `"AMZ[0-9]{6}"` |
 
 ```python

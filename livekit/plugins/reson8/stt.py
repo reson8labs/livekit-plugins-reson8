@@ -217,9 +217,10 @@ class BiasingOptions:
     Args:
         custom_model_id: A custom model to recognize against.
         phrases: Terms to bias toward, at most 250.
-        strength: How strongly to bias, non-negative. The server default suits
-            most requests; raise it only when expected terminology is not
-            being recovered.
+        strength: Additive boost on top of the model's trained calibration,
+            non-negative and unbounded. The server default suits most
+            requests; raise it only when expected terminology is not being
+            recovered.
         patterns: Regex-style shapes for short alphanumeric tokens to recover,
             such as ``"AMZ[0-9]{6}"`` for an order code or
             ``"[A-Z]{2}[0-9]{2} [A-Z]{3}"`` for a licence plate. Set these only
@@ -237,6 +238,13 @@ class BiasingOptions:
 
         if self.strength is not None and self.strength < 0:
             raise ValueError(f"strength must be non-negative, got {self.strength}")
+
+        if self.patterns and (self.phrases or self.custom_model_id):
+            other = "phrases" if self.phrases else "custom_model_id"
+            raise ValueError(
+                f"patterns cannot be combined with {other}: Reson8 recognizes either "
+                f"patterns or biasing phrases, not both."
+            )
 
     def query_params(self) -> dict[str, str]:
         params: dict[str, str] = {}
@@ -325,7 +333,7 @@ class STT(stt.STT):
       boundaries server-side and emits a turn-end *candidate* once it believes a
       turn is complete. That candidate surfaces as a preflight transcript the
       agent can act on speculatively, and is then either confirmed as a final
-      transcript or cancelled when the speaker keeps talking. Ideal for
+      transcript or replaced by a later candidate. Ideal for
       low-latency voice agents.
     * **Batch** (:meth:`recognize`) sends pre-recorded audio to
       ``/v1/speech-to-text/prerecorded`` and returns the full transcript.
@@ -726,9 +734,6 @@ class SpeechStream(stt.RecognizeStream):
                         alternatives=[self._candidate],
                     )
                 )
-
-        elif msg_type == "turn_continuation":
-            self._candidate = None
 
         elif msg_type == "turn_end":
             candidate = self._candidate
