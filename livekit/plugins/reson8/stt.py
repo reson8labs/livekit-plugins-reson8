@@ -365,8 +365,6 @@ class STT(stt.STT):
                 streaming=True,
                 interim_results=True,
                 offline_recognize=True,
-                # capabilities are static, so this reflects the constructor only;
-                # update_options(words=...) does not revise it
                 aligned_transcript="word" if transcript.words else False,
             ),
         )
