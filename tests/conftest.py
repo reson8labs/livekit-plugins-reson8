@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -41,6 +42,39 @@ class FakeChan:
         self.events.append(event)
 
 
+class EventLog:
+    """Drains a live stream in the background and records what it emitted."""
+
+    def __init__(self, stream: SpeechStream) -> None:
+        self.events: list[stt.SpeechEvent] = []
+        self._stream = stream
+        self._task = asyncio.create_task(self._read())
+
+    async def _read(self) -> None:
+        async for event in self._stream:
+            self.events.append(event)
+
+    async def wait_for(self, count: int, timeout: float = 5.0) -> list[stt.SpeechEvent]:
+        async def _poll() -> None:
+            while len(self.events) < count:
+                await asyncio.sleep(0.01)
+
+        await asyncio.wait_for(_poll(), timeout=timeout)
+        return self.events
+
+    async def assert_quiet(self, seconds: float = 0.5) -> None:
+        """Nothing new arrives in the given window."""
+
+        before = len(self.events)
+        await asyncio.sleep(seconds)
+        assert len(self.events) == before, f"unexpected events: {self.events[before:]}"
+
+    async def aclose(self) -> None:
+        self._task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await self._task
+
+
 def emitted(stream: SpeechStream) -> list[stt.SpeechEvent]:
     """The events a ``make_stream()`` stream has sent so far."""
     return cast(FakeChan, stream._event_ch).events
@@ -77,6 +111,7 @@ def make_stream() -> MakeStream:
         stream._speaking = False
         stream._candidate = None
         stream._start_time_offset = 0.0
+        stream._speech_duration = 0.0
         stream._event_ch = FakeChan()  # type: ignore[assignment]
         return stream
 
@@ -96,6 +131,7 @@ class Recorded:
     text: list[str] = field(default_factory=list)
     _ws: web.WebSocketResponse | None = None
     connected: asyncio.Event = field(default_factory=asyncio.Event)
+    connections: int = 0
 
     async def send(self, message: object) -> None:
         """Push a server -> client message once a stream has connected."""
@@ -103,6 +139,13 @@ class Recorded:
         await asyncio.wait_for(self.connected.wait(), timeout=5)
         assert self._ws is not None
         await self._ws.send_str(json.dumps(message))
+
+    async def wait_for_connections(self, count: int) -> None:
+        async def _poll() -> None:
+            while self.connections < count:
+                await asyncio.sleep(0.01)
+
+        await asyncio.wait_for(_poll(), timeout=5)
 
     async def wait_for_text(self, count: int = 1) -> None:
         async def _poll() -> None:
@@ -159,6 +202,7 @@ async def reson8_server() -> AsyncIterator[StartServer]:
             ws = web.WebSocketResponse()
             await ws.prepare(request)
             rec._ws = ws
+            rec.connections += 1
             rec.connected.set()
 
             async for msg in ws:

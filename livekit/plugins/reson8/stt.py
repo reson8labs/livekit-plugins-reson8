@@ -219,6 +219,7 @@ class STT(stt.STT):
                 streaming=True,
                 interim_results=True,
                 offline_recognize=True,
+                aligned_transcript="word" if include_words else False,
             ),
         )
 
@@ -385,6 +386,7 @@ class SpeechStream(stt.RecognizeStream):
         # the most recent turn-end candidate, promoted to a final transcript
         # once the server confirms the turn ended
         self._candidate: SpeechData | None = None
+        self._speech_duration = 0.0
 
     def update_options(
         self,
@@ -460,6 +462,7 @@ class SpeechStream(stt.RecognizeStream):
                         frames = audio_bstream.flush()
 
                     for frame in frames:
+                        self._speech_duration += frame.duration
                         await ws.send_bytes(frame.data.tobytes())
 
                     if flushing:
@@ -505,6 +508,9 @@ class SpeechStream(stt.RecognizeStream):
 
         while True:
             ws: aiohttp.ClientWebSocketResponse | None = None
+            self._speaking = False
+            self._candidate = None
+
             try:
                 ws = await self._connect_ws()
                 tasks = [
@@ -579,6 +585,18 @@ class SpeechStream(stt.RecognizeStream):
             if self._speaking:
                 self._speaking = False
                 self._event_ch.send_nowait(stt.SpeechEvent(type=stt.SpeechEventType.END_OF_SPEECH))
+
+            if self._speech_duration > 0:
+                self._event_ch.send_nowait(
+                    stt.SpeechEvent(
+                        type=stt.SpeechEventType.RECOGNITION_USAGE,
+                        request_id=self._request_id,
+                        recognition_usage=stt.RecognitionUsage(
+                            audio_duration=self._speech_duration
+                        ),
+                    )
+                )
+                self._speech_duration = 0.0
 
         else:
             logger.debug("ignoring unhandled Reson8 message type: %r", msg_type)
