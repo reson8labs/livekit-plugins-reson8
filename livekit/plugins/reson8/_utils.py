@@ -50,6 +50,15 @@ ENCODINGS: tuple[str, ...] = get_args(Encoding)
 # https://docs.reson8.dev/api/speech-to-text/turns/
 MIN_CHANNELS = 1
 MAX_CHANNELS = 10
+MAX_PHRASES = 250
+
+FillerMode = Literal["clean", "natural", "verbatim"]
+"""How filler words are rendered: removed, left to the model, or preserved.
+
+See https://docs.reson8.dev/api/speech-to-text/turns/.
+"""
+
+FILLER_MODES: tuple[str, ...] = get_args(FillerMode)
 
 
 def normalize_languages(value: str | Sequence[str] | None) -> str | None:

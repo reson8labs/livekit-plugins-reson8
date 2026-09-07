@@ -28,11 +28,14 @@ from ._utils import (
     DEFAULT_API_URL,
     ENCODINGS,
     ERROR_MESSAGE_HEADER,
+    FILLER_MODES,
     MAX_CHANNELS,
+    MAX_PHRASES,
     MIN_CHANNELS,
     PRERECORDED_PATH,
     TURNS_PATH,
     Encoding,
+    FillerMode,
     auth_headers,
     build_speech_data,
     build_url,
@@ -55,6 +58,27 @@ def _resolve_base_url(base_url: str | None) -> str:
         resolved = legacy
 
     return (resolved or DEFAULT_API_URL).rstrip("/")
+
+
+def _check_comma_joined(
+    name: str, values: Sequence[str] | None, *, limit: int | None = None
+) -> None:
+    """Validate entries that reach Reson8 joined into one comma-separated value."""
+
+    if values is None:
+        return
+
+    if limit is not None and len(values) > limit:
+        raise ValueError(f"{name} accepts at most {limit} entries, got {len(values)}")
+
+    for value in values:
+        if not value.strip():
+            raise ValueError(f"{name} cannot contain an empty entry")
+
+        if "," in value:
+            raise ValueError(
+                f"{name} is comma-separated on the wire, so no entry may contain a comma: {value!r}"
+            )
 
 
 def _check_probability(name: str, value: float | None) -> None:
@@ -170,19 +194,30 @@ class AudioOptions:
 @dataclass(frozen=True)
 class TranscriptOptions:
     """
-    Which extra detail Reson8 reports alongside the transcript.
+    How the transcript is produced, and what detail accompanies it.
 
     Args:
         words: Word-level results, each with its own timing.
         timestamps: Start and end times on the transcript itself.
         language: The detected language code.
         confidence: Per-word confidence. Batch recognition only.
+        filler_mode: What to do with filler words: ``"clean"`` removes them,
+            ``"natural"`` lets the model decide, ``"verbatim"`` preserves them.
+            ``None`` leaves the server's default.
     """
 
     words: bool = False
     timestamps: bool = False
     language: bool = False
     confidence: bool = False
+    filler_mode: FillerMode | None = None
+
+    def __post_init__(self) -> None:
+        if self.filler_mode is not None and self.filler_mode not in FILLER_MODES:
+            raise ValueError(
+                f"unsupported filler_mode: {self.filler_mode}. "
+                f"Reson8 accepts: {', '.join(sorted(FILLER_MODES))}."
+            )
 
     def query_params(self, *, streaming: bool) -> dict[str, str]:
         params: dict[str, str] = {}
@@ -199,27 +234,60 @@ class TranscriptOptions:
         if self.confidence and not streaming:
             params["include_confidence"] = "true"
 
+        if self.filler_mode is not None:
+            params["filler_mode"] = self.filler_mode
+
         return params
 
 
 @dataclass(frozen=True)
 class BiasingOptions:
     """
-    How to bias recognition toward expected terminology.
+    How to bias recognition toward terminology you expect.
 
-    See https://docs.reson8.dev/speech-to-text/features/custom-models/.
+    See https://docs.reson8.dev/speech-to-text/features/custom-models/
+    and https://docs.reson8.dev/speech-to-text/features/patterns/.
 
     Args:
         custom_model_id: A custom model to recognize against.
+        phrases: Terms to bias toward, at most 250.
+        strength: How strongly to bias, non-negative. The server default suits
+            most requests; raise it only when expected terminology is not
+            being recovered.
+        patterns: Regex-style shapes for short alphanumeric tokens to recover,
+            such as ``"AMZ[0-9]{6}"`` for an order code or
+            ``"[A-Z]{2}[0-9]{2} [A-Z]{3}"`` for a licence plate. Set these only
+            when the token is likely to be spoken.
     """
 
     custom_model_id: str | None = None
+    phrases: Sequence[str] | None = None
+    strength: float | None = None
+    patterns: Sequence[str] | None = None
+
+    def __post_init__(self) -> None:
+        _check_comma_joined("phrases", self.phrases, limit=MAX_PHRASES)
+        _check_comma_joined("patterns", self.patterns)
+
+        if self.strength is not None and self.strength < 0:
+            raise ValueError(f"strength must be non-negative, got {self.strength}")
 
     def query_params(self) -> dict[str, str]:
-        if not self.custom_model_id:
-            return {}
+        params: dict[str, str] = {}
 
-        return {"custom_model_id": self.custom_model_id}
+        if self.custom_model_id:
+            params["custom_model_id"] = self.custom_model_id
+
+        if self.phrases:
+            params["phrases"] = ",".join(self.phrases)
+
+        if self.patterns:
+            params["patterns"] = ",".join(self.patterns)
+
+        if self.strength is not None:
+            params["bias_strength"] = str(self.strength)
+
+        return params
 
 
 @dataclass(frozen=True)
