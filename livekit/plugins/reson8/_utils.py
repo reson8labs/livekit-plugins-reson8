@@ -37,6 +37,20 @@ See https://docs.reson8.dev/speech-to-text/features/languages/.
 SUPPORTED_LANGUAGES: tuple[str, ...] = get_args(SupportedLanguage)
 """``SupportedLanguage`` as a runtime tuple, for validation and error messages."""
 
+Encoding = Literal["auto", "pcm_s16le", "mulaw", "alaw"]
+"""Encodings the streaming and batch endpoints both accept.
+
+The container formats Reson8 documents for prerecorded audio are not listed:
+this plugin always sends raw frames, never a container. See
+https://docs.reson8.dev/speech-to-text/features/audio-formats/.
+"""
+
+ENCODINGS: tuple[str, ...] = get_args(Encoding)
+
+# https://docs.reson8.dev/api/speech-to-text/turns/
+MIN_CHANNELS = 1
+MAX_CHANNELS = 10
+
 
 def normalize_languages(value: str | Sequence[str] | None) -> str | None:
     """Normalize and validate a language selection into Reson8's query form.
@@ -66,8 +80,8 @@ def normalize_languages(value: str | Sequence[str] | None) -> str | None:
     return ",".join(codes)
 
 
-def build_url(api_url: str, path: str, params: dict[str, str], *, websocket: bool = False) -> str:
-    base = api_url.rstrip("/")
+def build_url(base_url: str, path: str, params: dict[str, str], *, websocket: bool = False) -> str:
+    base = base_url.rstrip("/")
     if websocket:
         base = base.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
 

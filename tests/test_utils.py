@@ -42,15 +42,15 @@ def test_normalize_languages_rejects_unsupported(value: str | list[str]) -> None
 
 
 @pytest.mark.parametrize(
-    ("api_url", "expected"),
+    ("base_url", "expected"),
     [
         ("https://api.reson8.dev", "wss://api.reson8.dev/turns?a=1"),
         ("http://localhost:8080", "ws://localhost:8080/turns?a=1"),
         ("https://api.reson8.dev/", "wss://api.reson8.dev/turns?a=1"),
     ],
 )
-def test_build_url_swaps_the_scheme_for_websockets(api_url: str, expected: str) -> None:
-    assert build_url(api_url, "/turns", {"a": "1"}, websocket=True) == expected
+def test_build_url_swaps_the_scheme_for_websockets(base_url: str, expected: str) -> None:
+    assert build_url(base_url, "/turns", {"a": "1"}, websocket=True) == expected
 
 
 def test_build_url_leaves_http_alone() -> None:
