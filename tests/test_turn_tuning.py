@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import json
 
+import aiohttp
 import pytest
-import websockets
+from conftest import MakeOpts, StartServer
 from livekit.agents.types import APIConnectOptions
 
 from livekit import rtc
@@ -12,14 +12,14 @@ from livekit.plugins import reson8
 from livekit.plugins.reson8.stt import TurnOptions
 
 
-def test_thresholds_reach_the_query_string(make_opts):
+def test_thresholds_reach_the_query_string(make_opts: MakeOpts) -> None:
     opts = make_opts(turn=TurnOptions(eager_turn_probability=0.35, final_turn_probability=0.7))
     params = opts.query_params(streaming=True)
     assert params["eager_turn_probability"] == "0.35"
     assert params["final_turn_probability"] == "0.7"
 
 
-def test_thresholds_are_omitted_for_batch(make_opts):
+def test_thresholds_are_omitted_for_batch(make_opts: MakeOpts) -> None:
     """The thresholds only exist on the turns endpoint."""
     opts = make_opts(turn=TurnOptions(eager_turn_probability=0.35, final_turn_probability=0.7))
     params = opts.query_params(streaming=False)
@@ -28,7 +28,7 @@ def test_thresholds_are_omitted_for_batch(make_opts):
 
 
 @pytest.mark.parametrize("value", [-0.1, 1.1])
-def test_out_of_range_probability_raises(value):
+def test_out_of_range_probability_raises(value: float) -> None:
     with pytest.raises(ValueError, match="between 0 and 1"):
         reson8.STT(api_key="k", final_turn_probability=value)
 
@@ -41,7 +41,7 @@ def test_out_of_range_probability_raises(value):
         (0.95, None),  # above the server's 0.92 default
     ],
 )
-def test_inverted_thresholds_raise(eager, final):
+def test_inverted_thresholds_raise(eager: float, final: float | None) -> None:
     with pytest.raises(ValueError, match="must be below"):
         TurnOptions(eager_turn_probability=eager, final_turn_probability=final)
 
@@ -53,7 +53,9 @@ def test_inverted_thresholds_raise(eager, final):
         (None, 0.5),  # 0.5 == the server's default eager
     ],
 )
-def test_equal_thresholds_warn(eager, final, caplog):
+def test_equal_thresholds_warn(
+    eager: float | None, final: float, caplog: pytest.LogCaptureFixture
+) -> None:
     """Equal thresholds are legal but pointless: the preflight has no lead."""
     with caplog.at_level("WARNING"):
         TurnOptions(eager_turn_probability=eager, final_turn_probability=final)
@@ -61,47 +63,45 @@ def test_equal_thresholds_warn(eager, final, caplog):
 
 
 @pytest.mark.parametrize(("eager", "final"), [(None, None), (0.35, 0.7)])
-def test_sane_thresholds_are_quiet(eager, final, caplog):
+def test_sane_thresholds_are_quiet(
+    eager: float | None, final: float | None, caplog: pytest.LogCaptureFixture
+) -> None:
     with caplog.at_level("WARNING"):
         TurnOptions(eager_turn_probability=eager, final_turn_probability=final)
     assert not caplog.records
 
 
-async def test_flush_sends_flush_request():
+async def test_flush_sends_flush_request(
+    reson8_server: StartServer, client_session: aiohttp.ClientSession
+) -> None:
     """LiveKit's flush sentinel must become a flush_request on the wire.
 
     Without this the caller has no way to commit a turn early, and is stuck
     waiting for final_turn_probability to be crossed.
     """
-    received: list[str] = []
-    got_flush = asyncio.Event()
+    server = await reson8_server()
+    stream = reson8.STT(
+        api_key="k",
+        api_url=server.api_url,
+        language="es",
+        http_session=client_session,
+    ).stream(conn_options=APIConnectOptions(max_retry=0))
 
-    async def handler(ws):
-        async for msg in ws:
-            if isinstance(msg, str):
-                received.append(msg)
-                got_flush.set()
-
-    async with websockets.serve(handler, "127.0.0.1", 0) as server:
-        port = server.sockets[0].getsockname()[1]
-        stream = reson8.STT(api_key="k", api_url=f"http://127.0.0.1:{port}", language="es").stream(
-            conn_options=APIConnectOptions(max_retry=0)
+    stream.push_frame(
+        rtc.AudioFrame(
+            data=b"\x00\x00" * 1600,
+            sample_rate=16000,
+            num_channels=1,
+            samples_per_channel=1600,
         )
+    )
+    stream.flush()
 
-        stream.push_frame(
-            rtc.AudioFrame(
-                data=b"\x00\x00" * 1600,
-                sample_rate=16000,
-                num_channels=1,
-                samples_per_channel=1600,
-            )
-        )
-        stream.flush()
+    try:
+        await server.wait_for_text()
+    finally:
+        await stream.aclose()
 
-        try:
-            await asyncio.wait_for(got_flush.wait(), timeout=10)
-        finally:
-            await stream.aclose()
-
-    assert received, "no text frame reached the server"
-    assert json.loads(received[0]) == {"type": "flush_request"}
+    assert json.loads(server.text[0]) == {"type": "flush_request"}
+    assert server.audio, "no audio frame reached the server"
+    assert server.query["language"] == "es"

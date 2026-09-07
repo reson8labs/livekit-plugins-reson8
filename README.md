@@ -26,7 +26,7 @@ reson8.STT(language="nl,de")        # Dutch or German
 reson8.STT(language=["nl", "de"])   # same, as a list
 ```
 
-Supported languages (`reson8.SupportedLanguages`):
+Supported languages (`reson8.SupportedLanguage`, or `reson8.SUPPORTED_LANGUAGES` at runtime):
 
 | Code | Language |
 |---|---|
@@ -93,7 +93,7 @@ print(event.alternatives[0].text)
 |---|---|---|
 | `api_key` | `RESON8_API_KEY` | *required* |
 | `api_url` | `RESON8_API_URL` | `https://api.reson8.dev` |
-| `language` | — | `None` (auto-detect; one or more of `SupportedLanguages`, e.g. `"nl,de"` or `["nl", "de"]`) |
+| `language` | — | `None` (auto-detect; one or more `SupportedLanguage` codes, e.g. `"nl,de"` or `["nl", "de"]`) |
 | `sample_rate` | — | `16000` |
 | `encoding` | — | `"pcm_s16le"` |
 | `channels` | — | `1` |

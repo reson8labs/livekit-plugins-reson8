@@ -1421,9 +1421,8 @@ wheels = [
 name = "livekit-plugins-reson8"
 source = { editable = "." }
 dependencies = [
-    { name = "httpx" },
+    { name = "aiohttp" },
     { name = "livekit-agents", extra = ["codecs"] },
-    { name = "websockets" },
 ]
 
 [package.dev-dependencies]
@@ -1435,6 +1434,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "python-dotenv" },
     { name = "ruff" },
+    { name = "websockets" },
 ]
 publish = [
     { name = "twine" },
@@ -1442,9 +1442,8 @@ publish = [
 
 [package.metadata]
 requires-dist = [
-    { name = "httpx", specifier = ">=0.28" },
+    { name = "aiohttp", specifier = ">=3.10" },
     { name = "livekit-agents", extras = ["codecs"], specifier = ">=1.6,<2" },
-    { name = "websockets", specifier = ">=13.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1456,6 +1455,7 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "ruff", specifier = ">=0.9" },
+    { name = "websockets", specifier = ">=13.0" },
 ]
 publish = [{ name = "twine", specifier = ">=7.0" }]
 

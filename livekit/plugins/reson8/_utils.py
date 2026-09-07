@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from enum import Enum
-from typing import Any
+from typing import Any, Literal, get_args
+from urllib.parse import urlencode
 
 from livekit.agents import APIStatusError, LanguageCode, create_api_error_from_http, stt
 from livekit.agents.types import NOT_GIVEN, NotGivenOr, TimedString
@@ -11,6 +11,8 @@ from livekit.agents.types import NOT_GIVEN, NotGivenOr, TimedString
 from .version import __version__
 
 DEFAULT_API_URL = "https://api.reson8.dev"
+TURNS_PATH = "/v1/speech-to-text/turns"
+PRERECORDED_PATH = "/v1/speech-to-text/prerecorded"
 INTEGRATION_HEADER = "X-Reson8-Integration"
 INTEGRATION_NAME = "livekit-python"
 
@@ -26,31 +28,14 @@ _STATUS_HINTS = {
 }
 
 
-class SupportedLanguages(str, Enum):
-    """The languages Reson8 can recognize, valued by ISO 639-1 code.
+SupportedLanguage = Literal["de", "en", "es", "fr", "fy", "it", "nl", "pl", "pt", "sv"]
+"""The languages Reson8 can recognize, as ISO 639-1 codes.
 
-    Members are strings (``SupportedLanguages.DUTCH == "nl"``), so they can be
-    passed directly wherever a ``language`` code is accepted. Language selection
-    is validated against this enum locally, so unsupported codes fail fast
-    instead of after a round-trip to the API.
-    """
+See https://docs.reson8.dev/speech-to-text/features/languages/.
+"""
 
-    GERMAN = "de"
-    ENGLISH = "en"
-    SPANISH = "es"
-    FRENCH = "fr"
-    FRISIAN = "fy"
-    ITALIAN = "it"
-    DUTCH = "nl"
-    POLISH = "pl"
-    PORTUGUESE = "pt"
-    SWEDISH = "sv"
-
-    def __str__(self) -> str:
-        return str.__str__(self)
-
-    def __format__(self, format_spec: str) -> str:
-        return str.__format__(self, format_spec)
+SUPPORTED_LANGUAGES: tuple[str, ...] = get_args(SupportedLanguage)
+"""``SupportedLanguage`` as a runtime tuple, for validation and error messages."""
 
 
 def normalize_languages(value: str | Sequence[str] | None) -> str | None:
@@ -59,8 +44,8 @@ def normalize_languages(value: str | Sequence[str] | None) -> str | None:
     ``"nl"`` -> ``"nl"``; ``"nl,de"`` -> ``"nl,de"``; ``["nl", "de"]`` ->
     ``"nl,de"``; ``None``/``""``/``[]`` -> ``None`` (auto-detect).
 
-    Raises ``ValueError`` if any code is not a member of :class:`SupportedLanguages`,
-    so invalid selections fail locally rather than after a request to the API.
+    Raises ``ValueError`` if any code is not a :data:`SupportedLanguage`, so
+    invalid selections fail locally rather than after a request to the API.
     """
 
     if value is None:
@@ -71,9 +56,9 @@ def normalize_languages(value: str | Sequence[str] | None) -> str | None:
     if not codes:
         return None
 
-    unsupported = [c for c in codes if c not in set(SupportedLanguages)]
+    unsupported = [c for c in codes if c not in SUPPORTED_LANGUAGES]
     if unsupported:
-        supported = ", ".join(sorted(SupportedLanguages))
+        supported = ", ".join(sorted(SUPPORTED_LANGUAGES))
         raise ValueError(
             f"unsupported language(s): {', '.join(unsupported)}. Reson8 supports: {supported}."
         )
@@ -81,9 +66,12 @@ def normalize_languages(value: str | Sequence[str] | None) -> str | None:
     return ",".join(codes)
 
 
-def to_ws_base(api_url: str) -> str:
-    """Convert an http(s) API base URL into its ws(s) equivalent."""
-    return api_url.rstrip("/").replace("https://", "wss://", 1).replace("http://", "ws://", 1)
+def build_url(api_url: str, path: str, params: dict[str, str], *, websocket: bool = False) -> str:
+    base = api_url.rstrip("/")
+    if websocket:
+        base = base.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
+
+    return f"{base}{path}?{urlencode(params)}"
 
 
 def auth_headers(api_key: str) -> dict[str, str]:

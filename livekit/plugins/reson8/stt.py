@@ -5,13 +5,11 @@ import json
 import os
 import uuid
 import weakref
-from collections.abc import Sequence
+from collections.abc import Awaitable, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, ClassVar
-from urllib.parse import urlencode
+from typing import Any, ClassVar, cast
 
-import httpx
-import websockets
+import aiohttp
 from livekit.agents import (
     DEFAULT_API_CONNECT_OPTIONS,
     APIConnectionError,
@@ -23,22 +21,26 @@ from livekit.agents import (
 from livekit.agents.stt import SpeechData
 from livekit.agents.types import NOT_GIVEN, NotGivenOr
 from livekit.agents.utils import is_given
-from websockets.asyncio.client import ClientConnection
 
 from livekit import rtc
 
 from ._utils import (
     DEFAULT_API_URL,
     ERROR_MESSAGE_HEADER,
+    PRERECORDED_PATH,
+    TURNS_PATH,
     auth_headers,
     build_speech_data,
+    build_url,
     integration_headers,
     normalize_languages,
     problem_code,
     status_error,
-    to_ws_base,
 )
 from .log import logger
+
+KEEPALIVE_INTERVAL = 30.0
+_SEND_CHUNK_MS = 100
 
 
 def _check_probability(name: str, value: float | None) -> None:
@@ -134,7 +136,7 @@ class STTOptions:
         return params
 
 
-class STT(stt.STT[Any]):
+class STT(stt.STT):
     """Reson8 speech-to-text.
 
     A single model that adapts to how LiveKit uses it:
@@ -150,7 +152,7 @@ class STT(stt.STT[Any]):
       ``/v1/speech-to-text/prerecorded`` and returns the full transcript.
 
     Leave ``language`` as ``None`` (the default) to auto-detect the spoken
-    language, or pass one or more codes from :class:`SupportedLanguages` to pin
+    language, or pass one or more :data:`SupportedLanguage` codes to pin
     recognition.
 
     ``eager_turn_probability`` and ``final_turn_probability`` are the main lever
@@ -184,13 +186,14 @@ class STT(stt.STT[Any]):
         include_language: bool = False,
         eager_turn_probability: float | None = None,
         final_turn_probability: float | None = None,
+        http_session: aiohttp.ClientSession | None = None,
     ) -> None:
         """
         Args:
             api_key: Reson8 API key. Falls back to the ``RESON8_API_KEY`` env var.
             api_url: Reson8 API base URL. Falls back to ``RESON8_API_URL`` or
                 ``https://api.reson8.dev``.
-            language: One or more codes from :class:`SupportedLanguages` to pin
+            language: One or more :data:`SupportedLanguage` codes to pin
                 recognition to. Pass a single code (``"nl"``), a comma-string
                 (``"nl,de"``), or a list (``["nl", "de"]``). Leave as ``None`` to
                 auto-detect. Raises ``ValueError`` for unsupported codes.
@@ -204,6 +207,8 @@ class STT(stt.STT[Any]):
             include_language: Report the detected language code.
             eager_turn_probability: Confidence (0-1) at which the preflight
                 transcript is emitted. Server default ``0.5``.
+            http_session: Optional session to use for requests. Defaults to the
+                shared session managed by the agent framework.
             final_turn_probability: Confidence (0-1) at which the turn commits.
                 Server default ``0.92``, tuned for conversational speech; a
                 one-word confirmation can take over a second to cross it.
@@ -240,7 +245,14 @@ class STT(stt.STT[Any]):
                 final_turn_probability=final_turn_probability,
             ),
         )
+        self._session = http_session
         self._streams = weakref.WeakSet[SpeechStream]()
+
+    def _ensure_session(self) -> aiohttp.ClientSession:
+        if not self._session:
+            self._session = utils.http_context.http_session()
+
+        return self._session
 
     @property
     def model(self) -> str:
@@ -297,6 +309,7 @@ class STT(stt.STT[Any]):
             api_key=self._api_key,
             api_url=self._api_url,
             conn_options=conn_options,
+            http_session=self._session,
         )
         self._streams.add(stream)
         return stream
@@ -315,33 +328,31 @@ class STT(stt.STT[Any]):
         opts.sample_rate = frames.sample_rate
         opts.channels = frames.num_channels
 
-        url = (
-            f"{self._api_url}/v1/speech-to-text/prerecorded?"
-            + f"{urlencode(opts.query_params(streaming=False))}"
-        )
+        url = build_url(self._api_url, PRERECORDED_PATH, opts.query_params(streaming=False))
 
         try:
-            async with httpx.AsyncClient(timeout=conn_options.timeout) as client:
-                resp = await client.post(
-                    url,
-                    content=frames.data.tobytes(),
-                    headers={
-                        **auth_headers(self._api_key),
-                        **integration_headers(),
-                        "Content-Type": "application/octet-stream",
-                    },
-                )
-                resp.raise_for_status()
-                body = resp.json()
-        except httpx.TimeoutException:
+            async with self._ensure_session().post(
+                url,
+                data=frames.data.tobytes(),
+                headers={
+                    **auth_headers(self._api_key),
+                    **integration_headers(),
+                    "Content-Type": "application/octet-stream",
+                },
+                timeout=aiohttp.ClientTimeout(total=30, sock_connect=conn_options.timeout),
+            ) as resp:
+                text = await resp.text()
+                if resp.status != 200:
+                    raise status_error(resp.status, detail=problem_code(text))
+        except asyncio.TimeoutError:
             raise APITimeoutError("Reson8 did not respond in time") from None
-        except httpx.HTTPStatusError as e:
-            raise status_error(
-                e.response.status_code,
-                detail=problem_code(e.response.text),
-            ) from None
-        except httpx.HTTPError as e:
+        except aiohttp.ClientError as e:
             raise APIConnectionError(f"Failed to reach Reson8 ({type(e).__name__})") from None
+
+        try:
+            body = json.loads(text)
+        except ValueError:
+            raise APIConnectionError("Reson8 returned a malformed response body") from None
 
         return stt.SpeechEvent(
             type=stt.SpeechEventType.FINAL_TRANSCRIPT,
@@ -361,11 +372,13 @@ class SpeechStream(stt.RecognizeStream):
         api_key: str,
         api_url: str,
         conn_options: APIConnectOptions,
+        http_session: aiohttp.ClientSession | None = None,
     ) -> None:
         super().__init__(stt=stt, conn_options=conn_options, sample_rate=opts.sample_rate)
         self._opts = opts
         self._api_key = api_key
         self._api_url = api_url
+        self._session = http_session
         self._request_id = str(uuid.uuid4())
         self._reconnect_event = asyncio.Event()
         self._speaking = False
@@ -394,94 +407,134 @@ class SpeechStream(stt.RecognizeStream):
             self._opts.include_language = include_language
         self._reconnect_event.set()
 
-    def _build_url(self) -> str:
-        base = to_ws_base(self._api_url)
-        return (
-            f"{base}/v1/speech-to-text/turns?{urlencode(self._opts.query_params(streaming=True))}"
+    def _ensure_session(self) -> aiohttp.ClientSession:
+        if not self._session:
+            self._session = utils.http_context.http_session()
+
+        return self._session
+
+    async def _connect_ws(self) -> aiohttp.ClientWebSocketResponse:
+        url = build_url(
+            self._api_url, TURNS_PATH, self._opts.query_params(streaming=True), websocket=True
         )
 
+        connect = self._ensure_session().ws_connect(
+            url,
+            headers={**auth_headers(self._api_key), **integration_headers()},
+            heartbeat=KEEPALIVE_INTERVAL,
+        )
+
+        try:
+            return await asyncio.wait_for(
+                cast("Awaitable[aiohttp.ClientWebSocketResponse]", connect),
+                self._conn_options.timeout,
+            )
+        except aiohttp.WSServerHandshakeError as e:
+            reason = e.headers.get(ERROR_MESSAGE_HEADER) if e.headers else None
+            raise status_error(e.status, detail=reason) from None
+        except asyncio.TimeoutError:
+            raise APITimeoutError("Timed out connecting to Reson8") from None
+        except aiohttp.ClientError as e:
+            raise APIConnectionError(f"Failed to connect to Reson8 ({type(e).__name__})") from None
+
     async def _run(self) -> None:
-        closing = False
+        closing_ws = False
 
-        async def send_task(ws: ClientConnection) -> None:
-            async for data in self._input_ch:
-                if isinstance(data, rtc.AudioFrame):
-                    await ws.send(data.data.tobytes())
-                elif isinstance(data, self._FlushSentinel):
-                    await ws.send(json.dumps({"type": "flush_request"}))
+        @utils.log_exceptions(logger=logger)
+        async def send_task(ws: aiohttp.ClientWebSocketResponse) -> None:
+            nonlocal closing_ws
 
-            nonlocal closing
-            closing = True
+            samples_per_channel = self._opts.sample_rate * _SEND_CHUNK_MS // 1000
+            audio_bstream = utils.audio.AudioByteStream(
+                sample_rate=self._opts.sample_rate,
+                num_channels=self._opts.channels,
+                samples_per_channel=samples_per_channel,
+            )
+
+            try:
+                async for data in self._input_ch:
+                    flushing = isinstance(data, self._FlushSentinel)
+                    if isinstance(data, rtc.AudioFrame):
+                        frames = audio_bstream.write(data.data.tobytes())
+                    else:
+                        frames = audio_bstream.flush()
+
+                    for frame in frames:
+                        await ws.send_bytes(frame.data.tobytes())
+
+                    if flushing:
+                        await ws.send_str(json.dumps({"type": "flush_request"}))
+            except (aiohttp.ClientError, ConnectionError):
+                if closing_ws or self._ensure_session().closed:
+                    return
+
+                raise
+
+            closing_ws = True
             await ws.close()
 
-        async def recv_task(ws: ClientConnection) -> None:
-            async for raw in ws:
-                if isinstance(raw, bytes):
+        @utils.log_exceptions(logger=logger)
+        async def recv_task(ws: aiohttp.ClientWebSocketResponse) -> None:
+            while True:
+                msg = await ws.receive()
+                if msg.type in (
+                    aiohttp.WSMsgType.CLOSED,
+                    aiohttp.WSMsgType.CLOSE,
+                    aiohttp.WSMsgType.CLOSING,
+                ):
+                    if closing_ws or self._ensure_session().closed:
+                        return
+
+                    raise APIConnectionError(
+                        f"Reson8 connection closed unexpectedly (code={ws.close_code})"
+                    )
+
+                if msg.type is not aiohttp.WSMsgType.TEXT:
                     continue
 
                 try:
-                    msg = json.loads(raw)
+                    parsed = json.loads(msg.data)
                 except (ValueError, TypeError):
                     logger.warning(
-                        "ignoring unparseable Reson8 message",
-                        extra={"lk.pii.message": raw},
+                        "Ignoring unparseable Reson8 message",
+                        extra={"lk.pii.message": msg.data},
                     )
                     continue
 
-                self._process_message(msg)
+                self._process_message(parsed)
 
         while True:
+            ws: aiohttp.ClientWebSocketResponse | None = None
             try:
-                ws = await websockets.connect(
-                    self._build_url(),
-                    additional_headers={
-                        **auth_headers(self._api_key),
-                        **integration_headers(),
-                    },
-                )
-            except websockets.InvalidStatus as e:
-                raise status_error(
-                    e.response.status_code,
-                    detail=e.response.headers.get(ERROR_MESSAGE_HEADER),
-                ) from None
-            except (websockets.InvalidHandshake, OSError) as e:
-                raise APIConnectionError(
-                    f"Failed to connect to Reson8 ({type(e).__name__})"
-                ) from None
-
-            tasks = [
-                asyncio.create_task(send_task(ws)),
-                asyncio.create_task(recv_task(ws)),
-            ]
-            wait_reconnect = asyncio.create_task(self._reconnect_event.wait())
-
-            try:
-                waiters: list[asyncio.Future[Any]] = [
-                    asyncio.gather(*tasks),
-                    wait_reconnect,
+                ws = await self._connect_ws()
+                tasks = [
+                    asyncio.create_task(send_task(ws)),
+                    asyncio.create_task(recv_task(ws)),
                 ]
-                done, _ = await asyncio.wait(
-                    waiters,
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-                for task in done:
-                    if task is not wait_reconnect:
-                        task.result()
+                tasks_group = asyncio.gather(*tasks)
+                wait_reconnect = asyncio.create_task(self._reconnect_event.wait())
 
-                if wait_reconnect.done() and not closing:
+                try:
+                    done, _ = await asyncio.wait(
+                        (tasks_group, wait_reconnect),
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    for task in done:
+                        if task is not wait_reconnect:
+                            task.result()
+
+                    if wait_reconnect not in done:
+                        break
+
                     self._reconnect_event.clear()
                     logger.debug("Reconnecting to Reson8 to apply updated options")
-                    continue
-
-                break
-            except websockets.ConnectionClosedError as e:
-                if closing:
-                    break
-
-                raise APIConnectionError(f"Reson8 connection closed unexpectedly: {e}") from None
+                finally:
+                    await utils.aio.gracefully_cancel(*tasks, wait_reconnect)
+                    tasks_group.cancel()
+                    tasks_group.exception()
             finally:
-                await utils.aio.gracefully_cancel(*tasks, wait_reconnect)
-                await ws.close()
+                if ws is not None:
+                    await ws.close()
 
     def _process_message(self, msg: dict[str, Any]) -> None:
         msg_type = msg.get("type")
