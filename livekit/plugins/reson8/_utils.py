@@ -4,6 +4,7 @@ import json
 from collections.abc import Sequence
 from enum import Enum
 from typing import Any
+from urllib.parse import urlencode
 
 from livekit.agents import APIStatusError, LanguageCode, create_api_error_from_http, stt
 from livekit.agents.types import NOT_GIVEN, NotGivenOr, TimedString
@@ -11,6 +12,8 @@ from livekit.agents.types import NOT_GIVEN, NotGivenOr, TimedString
 from .version import __version__
 
 DEFAULT_API_URL = "https://api.reson8.dev"
+TURNS_PATH = "/v1/speech-to-text/turns"
+PRERECORDED_PATH = "/v1/speech-to-text/prerecorded"
 INTEGRATION_HEADER = "X-Reson8-Integration"
 INTEGRATION_NAME = "livekit-python"
 
@@ -81,9 +84,12 @@ def normalize_languages(value: str | Sequence[str] | None) -> str | None:
     return ",".join(codes)
 
 
-def to_ws_base(api_url: str) -> str:
-    """Convert an http(s) API base URL into its ws(s) equivalent."""
-    return api_url.rstrip("/").replace("https://", "wss://", 1).replace("http://", "ws://", 1)
+def build_url(api_url: str, path: str, params: dict[str, str], *, websocket: bool = False) -> str:
+    base = api_url.rstrip("/")
+    if websocket:
+        base = base.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
+
+    return f"{base}{path}?{urlencode(params)}"
 
 
 def auth_headers(api_key: str) -> dict[str, str]:
