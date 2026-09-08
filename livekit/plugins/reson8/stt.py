@@ -67,6 +67,11 @@ class TurnOptions:
             default is tuned for conversational speech and is slow to commit a
             one-word answer; lower it to commit sooner, at the risk of cutting
             off longer utterances.
+        report_probabilities: Ask Reson8 to report the end-of-turn probability
+            as it evaluates, and attach the latest reading to each transcript
+            under ``SpeechData.metadata``. Useful for choosing the two
+            thresholds against real audio rather than by guesswork. Off by
+            default: it adds a message per evaluation.
     """
 
     # /turns does not report its effective config, so the defaults are mirrored
@@ -77,6 +82,7 @@ class TurnOptions:
 
     eager_probability: float | None = None
     final_probability: float | None = None
+    report_probabilities: bool = False
 
     def __post_init__(self) -> None:
         check_probability("eager_probability", self.eager_probability)
@@ -109,6 +115,9 @@ class TurnOptions:
 
         if self.final_probability is not None:
             params["final_turn_probability"] = str(self.final_probability)
+
+        if self.report_probabilities:
+            params["return_probabilities"] = "true"
 
         return params
 
@@ -712,7 +721,11 @@ class SpeechStream(stt.RecognizeStream):
 
         if msg_type == "turn_start":
             self._candidate = None
+            self._probabilities = None
             self._start_speaking()
+
+        elif msg_type == "turn_end_probability":
+            self._probabilities = {k: v for k, v in msg.items() if k != "type"}
 
         elif msg_type == "turn_end_candidate":
             self._start_speaking()
@@ -721,6 +734,7 @@ class SpeechStream(stt.RecognizeStream):
                 msg,
                 language=self._opts.language,
                 start_time_offset=self.start_time_offset,
+                metadata=self._probabilities,
             )
 
             repeated = previous is not None and previous.text == self._candidate.text

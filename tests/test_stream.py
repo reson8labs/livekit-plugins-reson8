@@ -66,3 +66,51 @@ def test_the_last_candidate_still_becomes_the_final(make_stream: MakeStream) -> 
 
     finals = [e for e in emitted(stream) if e.type == SpeechEventType.FINAL_TRANSCRIPT]
     assert [e.alternatives[0].text for e in finals] == ["order lunch"]
+
+
+def test_probability_readings_are_attached_to_the_candidate(make_stream: MakeStream) -> None:
+    stream = make_stream(language="en")
+
+    stream._process_message({"type": "turn_start"})
+    stream._process_message(
+        {
+            "type": "turn_end_probability",
+            "probability": 0.63,
+            "raw_eot_probability": 0.58,
+            "vad_probability": 0.91,
+            "timestamp_ms": 1200,
+        }
+    )
+    stream._process_message({"type": "turn_end_candidate", "text": "order lunch"})
+    preflight = next(e for e in emitted(stream) if e.type == SpeechEventType.PREFLIGHT_TRANSCRIPT)
+
+    metadata = preflight.alternatives[0].metadata
+    assert metadata is not None
+    assert metadata["probability"] == 0.63
+    assert metadata["vad_probability"] == 0.91
+    assert "type" not in metadata
+
+
+def test_a_probability_reading_emits_no_event(make_stream: MakeStream) -> None:
+    stream = make_stream()
+
+    stream._process_message({"type": "turn_start"})
+    stream._process_message({"type": "turn_end_probability", "probability": 0.4})
+
+    assert [e.type for e in emitted(stream)] == [SpeechEventType.START_OF_SPEECH]
+
+
+def test_readings_do_not_leak_across_turns(make_stream: MakeStream) -> None:
+    stream = make_stream()
+
+    stream._process_message({"type": "turn_start"})
+    stream._process_message({"type": "turn_end_probability", "probability": 0.4})
+    stream._process_message({"type": "turn_end_candidate", "text": "first"})
+    stream._process_message({"type": "turn_end"})
+
+    stream._process_message({"type": "turn_start"})
+    stream._process_message({"type": "turn_end_candidate", "text": "second"})
+
+    preflights = [e for e in emitted(stream) if e.type == SpeechEventType.PREFLIGHT_TRANSCRIPT]
+    assert preflights[0].alternatives[0].metadata == {"probability": 0.4}
+    assert preflights[1].alternatives[0].metadata is None

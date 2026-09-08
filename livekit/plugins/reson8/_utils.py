@@ -223,12 +223,15 @@ def build_speech_data(
     *,
     language: str | None,
     start_time_offset: float = 0.0,
+    metadata: dict[str, Any] | None = None,
 ) -> stt.SpeechData:
-    """Build a LiveKit ``SpeechData`` from a Reson8 transcript/turn payload.
+    """
+    Build a LiveKit ``SpeechData`` from a Reson8 transcript/turn payload.
 
     Handles the optional ``start_ms``/``duration_ms``/``words`` fields that are
     only present when the matching ``include_*`` options are enabled.
     """
+
     raw_words = msg.get("words") or []
     confidences = [_confidence(w) for w in raw_words]
     words = [
@@ -262,4 +265,5 @@ def build_speech_data(
         end_time=end_time,
         confidence=confidence,
         words=words,
+        metadata=metadata,
     )
