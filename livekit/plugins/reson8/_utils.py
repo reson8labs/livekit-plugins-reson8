@@ -100,6 +100,12 @@ def check_comma_joined(
     if values is None:
         return
 
+    if isinstance(values, str):
+        raise ValueError(
+            f"{name} takes a sequence of strings, not a single string; "
+            f"pass [{values!r}] for one entry"
+        )
+
     if limit is not None and len(values) > limit:
         raise ValueError(f"{name} accepts at most {limit} entries, got {len(values)}")
 

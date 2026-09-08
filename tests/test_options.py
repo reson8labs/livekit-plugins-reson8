@@ -275,3 +275,15 @@ def test_patterns_cannot_be_combined_with_biasing(
 )
 def test_biasing_combinations_the_server_accepts(build: Callable[[], BiasingOptions]) -> None:
     assert build() is not None
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        pytest.param(lambda: BiasingOptions(phrases="Reson8"), id="phrases"),
+        pytest.param(lambda: BiasingOptions(patterns="[0-9]{4}"), id="patterns"),
+    ],
+)
+def test_a_bare_string_is_rejected(build: Callable[[], BiasingOptions]) -> None:
+    with pytest.raises(ValueError, match="takes a sequence of strings"):
+        build()
