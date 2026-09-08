@@ -115,18 +115,6 @@ The main lever on end-of-turn latency. `None` leaves the server's default.
 |---|---|---|
 | `eager_probability` | `None` (server: `0.5`) | confidence at which the preflight transcript is emitted |
 | `final_probability` | `None` (server: `0.92`) | confidence at which the turn commits |
-| `report_probabilities` | `False` | report the end-of-turn probability as it is evaluated, on `SpeechData.metadata` |
-
-`report_probabilities` is how you pick the two thresholds from real audio
-rather than by guesswork: each transcript carries the most recent reading.
-
-```python
-stt = reson8.STT(turn=reson8.TurnOptions(report_probabilities=True))
-
-# on a transcript event
-event.alternatives[0].metadata
-# {"probability": 0.63, "raw_eot_probability": 0.58, "vad_probability": 0.91, "timestamp_ms": 1200}
-```
 
 ### `AudioOptions`
 
