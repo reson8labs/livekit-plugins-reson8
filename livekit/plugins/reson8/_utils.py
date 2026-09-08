@@ -21,12 +21,10 @@ INTEGRATION_NAME = "livekit-python"
 
 ERROR_MESSAGE_HEADER = "X-Error-Message"
 
-# https://docs.reson8.dev/api/speech-to-text/turns/ and /api/speech-to-text/prerecorded/
 _STATUS_HINTS = {
-    401: "Missing or invalid credentials, check the provided api_key or RESON8_API_KEY",
-    402: "Credit limit exceeded, see https://docs.reson8.dev/limits/",
-    413: "The request body exceeds the size limit",
-    429: "Concurrent connection limit exceeded, see https://docs.reson8.dev/limits/",
+    401: "check the provided api_key or RESON8_API_KEY",
+    402: "see https://docs.reson8.dev/limits/",
+    429: "see https://docs.reson8.dev/limits/",
 }
 
 

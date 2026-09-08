@@ -141,7 +141,8 @@ async def test_rejected_batch_request_without_a_body(
     with pytest.raises(APIStatusError) as excinfo:
         await _stt(server.api_url, client_session).recognize(_frame(), conn_options=NO_RETRY)
 
-    assert "exceeds the size limit" in excinfo.value.message
+    assert excinfo.value.status_code == 413
+    assert "Request Entity Too Large" in excinfo.value.message
 
 
 async def test_batch_timeout_is_a_timeout_error(
@@ -198,3 +199,15 @@ async def test_a_rejected_request_reports_which_parameter_was_wrong(
         await _stt(server.api_url, client_session).recognize(_frame(), conn_options=NO_RETRY)
 
     assert "Invalid encoding: mp3" in excinfo.value.message
+
+
+def test_hints_do_not_repeat_what_the_server_said() -> None:
+    message = status_error(402, detail="Credit limit exceeded").message
+
+    assert message.count("Credit limit exceeded") == 1
+    assert "https://docs.reson8.dev/limits/" in message
+
+
+@pytest.mark.parametrize("status_code", [401, 402, 429])
+def test_a_hint_survives_when_the_server_stays_silent(status_code: int) -> None:
+    assert status_error(status_code).message not in ("", None)
