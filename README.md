@@ -133,7 +133,6 @@ really are something else.
 | Field | Default | |
 |---|---|---|
 | `words` | `False` | word-level results, each with its own timing |
-| `timestamps` | `False` | start and end times on the transcript |
 | `language` | `False` | the detected language code |
 | `confidence` | `False` | per-word confidence, batch recognition only |
 | `filler_mode` | `None` (server: `natural`) | `clean` removes filler words, `natural` lets the model decide, `verbatim` preserves them |

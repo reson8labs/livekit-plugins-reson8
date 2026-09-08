@@ -164,7 +164,6 @@ class TranscriptOptions:
 
     Args:
         words: Word-level results, each with its own timing.
-        timestamps: Start and end times on the transcript itself.
         language: The detected language code.
         confidence: Per-word confidence. Batch recognition only.
         filler_mode: What to do with filler words: ``"clean"`` removes them,
@@ -173,7 +172,6 @@ class TranscriptOptions:
     """
 
     words: bool = False
-    timestamps: bool = False
     language: bool = False
     confidence: bool = False
     filler_mode: FillerMode | None = None
@@ -186,13 +184,10 @@ class TranscriptOptions:
             )
 
     def query_params(self, *, streaming: bool) -> dict[str, str]:
-        params: dict[str, str] = {}
+        params: dict[str, str] = {"include_timestamps": "true"}
 
         if self.words:
             params["include_words"] = "true"
-
-        if self.timestamps:
-            params["include_timestamps"] = "true"
 
         if self.language:
             params["include_language"] = "true"
@@ -710,6 +705,10 @@ class SpeechStream(stt.RecognizeStream):
 
     def _process_message(self, msg: dict[str, Any]) -> None:
         msg_type = msg.get("type")
+        logger.debug(
+            "received turn event",
+            extra={"type": msg_type, "lk.pii.text": msg.get("text")},
+        )
 
         if msg_type == "turn_start":
             self._candidate = None
@@ -717,12 +716,15 @@ class SpeechStream(stt.RecognizeStream):
 
         elif msg_type == "turn_end_candidate":
             self._start_speaking()
+            previous = self._candidate
             self._candidate = build_speech_data(
                 msg,
                 language=self._opts.language,
                 start_time_offset=self.start_time_offset,
             )
-            if self._candidate.text:
+
+            repeated = previous is not None and previous.text == self._candidate.text
+            if self._candidate.text and not repeated:
                 self._event_ch.send_nowait(
                     stt.SpeechEvent(
                         type=stt.SpeechEventType.PREFLIGHT_TRANSCRIPT,

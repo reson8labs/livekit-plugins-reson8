@@ -16,7 +16,12 @@ BuildBiasing = Callable[[Sequence[str]], BiasingOptions]
 
 def test_query_params_defaults(make_opts: MakeOpts) -> None:
     params = make_opts().query_params(streaming=True)
-    assert params == {"encoding": "pcm_s16le", "sample_rate": "16000", "channels": "1"}
+    assert params == {
+        "encoding": "pcm_s16le",
+        "sample_rate": "16000",
+        "channels": "1",
+        "include_timestamps": "true",
+    }
 
 
 def test_query_params_includes_language_when_set(make_opts: MakeOpts) -> None:
@@ -51,7 +56,7 @@ def test_query_params_batch_sends_both_language_and_confidence(make_opts: MakeOp
 
 def test_query_params_passes_through_transcript_detail_and_model(make_opts: MakeOpts) -> None:
     opts = make_opts(
-        transcript=TranscriptOptions(timestamps=True, words=True),
+        transcript=TranscriptOptions(words=True),
         biasing=BiasingOptions(custom_model_id="m1"),
     )
     params = opts.query_params(streaming=True)
