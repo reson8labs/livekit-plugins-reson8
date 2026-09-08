@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Sequence
 from typing import Any, Literal, get_args
 from urllib.parse import urlencode
@@ -63,6 +64,8 @@ See https://docs.reson8.dev/api/speech-to-text/turns/.
 
 FILLER_MODES: tuple[str, ...] = get_args(FillerMode)
 
+_COMMA_OUTSIDE_BRACES = re.compile(r",(?![^{}]*})")
+
 
 def normalize_languages(value: str | Sequence[str] | None) -> str | None:
     """Normalize and validate a language selection into Reson8's query form.
@@ -93,9 +96,18 @@ def normalize_languages(value: str | Sequence[str] | None) -> str | None:
 
 
 def check_comma_joined(
-    name: str, values: Sequence[str] | None, *, limit: int | None = None
+    name: str,
+    values: Sequence[str] | None,
+    *,
+    limit: int | None = None,
+    allow_braced_commas: bool = False,
 ) -> None:
-    """Validate entries that reach Reson8 joined into one comma-separated value."""
+    """
+    Validate entries that reach Reson8 joined into one comma-separated value.
+
+    ``allow_braced_commas`` keeps a comma inside ``{}`` — a ``{m,n}`` repeat
+    range in a pattern — which the server does not treat as a separator.
+    """
 
     if values is None:
         return
@@ -113,7 +125,14 @@ def check_comma_joined(
         if not value.strip():
             raise ValueError(f"{name} cannot contain an empty entry")
 
-        if "," in value:
+        if allow_braced_commas:
+            if _COMMA_OUTSIDE_BRACES.search(value):
+                raise ValueError(
+                    f"{name} entries are comma-separated on the wire, so a comma outside "
+                    f"braces would split this entry: {value!r}. A comma inside a {{m,n}} "
+                    f"range is fine."
+                )
+        elif "," in value:
             raise ValueError(
                 f"{name} is comma-separated on the wire, so no entry may contain a comma: {value!r}"
             )

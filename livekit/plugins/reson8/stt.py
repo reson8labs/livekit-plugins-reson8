@@ -215,14 +215,17 @@ class BiasingOptions:
     and https://docs.reson8.dev/speech-to-text/features/patterns/.
 
     Args:
-        custom_model_id: A custom model to recognize against.
+        custom_model_id: A custom model to bias toward, for a vocabulary too
+            large for ``phrases`` or one reused across requests. Build the
+            model in Reson8 and pass its id here.
         phrases: Terms to bias toward, at most 250.
         strength: Additive boost on top of the model's trained calibration,
             non-negative and unbounded. The server default suits most
             requests; raise it only when expected terminology is not being
             recovered.
         patterns: Regex-style shapes for short alphanumeric tokens to recover,
-            such as ``"AMZ[0-9]{6}"`` for an order code or
+            such as ``"AMZ[0-9]{6}"`` for an order code,
+            ``"[0-9]{4,6}"`` for a variable-length one, or
             ``"[A-Z]{2}[0-9]{2} [A-Z]{3}"`` for a licence plate. Set these only
             when the token is likely to be spoken.
     """
@@ -234,7 +237,7 @@ class BiasingOptions:
 
     def __post_init__(self) -> None:
         check_comma_joined("phrases", self.phrases, limit=MAX_PHRASES)
-        check_comma_joined("patterns", self.patterns)
+        check_comma_joined("patterns", self.patterns, allow_braced_commas=True)
 
         if self.strength is not None and self.strength < 0:
             raise ValueError(f"strength must be non-negative, got {self.strength}")

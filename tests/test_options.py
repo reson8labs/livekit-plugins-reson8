@@ -218,10 +218,9 @@ COMMA_JOINED_FIELDS = [
 ]
 
 
-@pytest.mark.parametrize("build", COMMA_JOINED_FIELDS)
-def test_a_comma_inside_an_entry_raises(build: BuildBiasing) -> None:
+def test_a_comma_inside_a_phrase_raises() -> None:
     with pytest.raises(ValueError, match="may contain a comma"):
-        build(["fine", "not,fine"])
+        BiasingOptions(phrases=["fine", "not,fine"])
 
 
 @pytest.mark.parametrize("build", COMMA_JOINED_FIELDS)
@@ -287,3 +286,17 @@ def test_biasing_combinations_the_server_accepts(build: Callable[[], BiasingOpti
 def test_a_bare_string_is_rejected(build: Callable[[], BiasingOptions]) -> None:
     with pytest.raises(ValueError, match="takes a sequence of strings"):
         build()
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    ["[0-9]{4,6}", "(INV)?[0-9]{4,5}", "AMZ[0-9]{6}", "[A-Z]{2}[0-9]{2} [A-Z]{3}"],
+)
+def test_braced_ranges_survive_validation(pattern: str) -> None:
+    assert BiasingOptions(patterns=[pattern]).patterns == [pattern]
+
+
+@pytest.mark.parametrize("pattern", ["a,b", "AMZ[0-9]{6},X"])
+def test_a_comma_outside_braces_still_raises(pattern: str) -> None:
+    with pytest.raises(ValueError, match="outside"):
+        BiasingOptions(patterns=[pattern])

@@ -7,8 +7,8 @@ A single `reson8.STT` class that adapts to how LiveKit uses it:
 - **Streaming** (`stream()`, used by voice agents) connects to the turn-aware
   endpoint. Reson8 detects conversational turn boundaries server-side: it emits
   a *preflight* transcript (an eager guess that the turn is over) that your agent
-  can start responding to, then confirms it as a final transcript — or cancels it
-  if the speaker keeps talking. Great for low-latency voice agents.
+  can start responding to. A later guess replaces it, and the last one becomes
+  the final transcript when the turn ends. Great for low-latency voice agents.
 - **Batch** (`recognize()`) transcribes pre-recorded audio and returns the full
   transcript.
 
@@ -125,7 +125,7 @@ really are something else.
 | Field | Default | |
 |---|---|---|
 | `sample_rate` | `16000` | streaming input is resampled to this |
-| `encoding` | `"pcm_s16le"` | one of `auto`, `pcm_s16le`, `mulaw`, `alaw` |
+| `encoding` | `"pcm_s16le"` | one of `pcm_s16le`, `mulaw`, `alaw` |
 | `num_channels` | `1` | 1 to 10 |
 
 ### `TranscriptOptions`
@@ -140,24 +140,29 @@ really are something else.
 
 ### `BiasingOptions`
 
+Use `phrases` for a handful of terms on a single request, a `custom_model_id`
+for a vocabulary that is larger or reused across requests, and `patterns` for
+structured tokens whose shape you know up front.
+
 Biasing is not free: phrases and patterns can *degrade* transcription of audio
 that does not contain them, and stronger biasing introduces irrelevant terms.
 
 | Field | Default | |
 |---|---|---|
-| `custom_model_id` | `None` | a custom model to recognize against |
+| `custom_model_id` | `None` | a custom model to bias toward, for a vocabulary too large for `phrases` or reused across requests |
 | `phrases` | `None` | terms to bias toward, at most 250; needs no custom model |
 | `strength` | `None` (server: `0.45`) | additive boost on the model's trained calibration. Raise only when expected terminology is not being recovered |
-| `patterns` | `None` | shapes for short alphanumeric tokens to recover, e.g. `"AMZ[0-9]{6}"` |
+| `patterns` | `None` | shapes for short alphanumeric tokens to recover, e.g. `"AMZ[0-9]{6}"` or `"[0-9]{4,6}"` |
+
+`patterns` cannot be combined with `phrases` or `custom_model_id`: Reson8
+recognizes either patterns or biasing phrases, not both.
 
 ```python
-stt = reson8.STT(
-    biasing=reson8.BiasingOptions(
-        phrases=["Reson8", "LiveKit"],
-        # an order code, so the digits are not heard as words
-        patterns=["AMZ[0-9]{6}"],
-    ),
-)
+# bias toward vocabulary the model would otherwise miss
+stt = reson8.STT(biasing=reson8.BiasingOptions(phrases=["Reson8", "LiveKit"]))
+
+# or recover a structured token, so its digits are not heard as words
+stt = reson8.STT(biasing=reson8.BiasingOptions(patterns=["AMZ[0-9]{6}", "[0-9]{4,6}"]))
 ```
 
 See [custom models](https://docs.reson8.dev/speech-to-text/features/custom-models/)
