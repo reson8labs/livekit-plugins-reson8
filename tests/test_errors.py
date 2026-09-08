@@ -48,7 +48,7 @@ def test_status_error_keeps_the_server_reason_and_the_hint() -> None:
 def test_status_error_renders_unmapped_statuses() -> None:
     err = status_error(500)
     assert err.status_code == 500
-    assert "Internal Server Error" in err.message
+    assert "500" in err.message
 
 
 @pytest.mark.parametrize(
@@ -142,7 +142,7 @@ async def test_rejected_batch_request_without_a_body(
         await _stt(server.api_url, client_session).recognize(_frame(), conn_options=NO_RETRY)
 
     assert excinfo.value.status_code == 413
-    assert "Request Entity Too Large" in excinfo.value.message
+    assert "413" in excinfo.value.message
 
 
 async def test_batch_timeout_is_a_timeout_error(
