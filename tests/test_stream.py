@@ -31,3 +31,38 @@ def test_unhandled_message_type_produces_no_events(make_stream: MakeStream) -> N
     stream._process_message({"type": "something_new"})
 
     assert emitted(stream) == []
+
+
+def test_a_repeated_candidate_does_not_re_emit_preflight(make_stream: MakeStream) -> None:
+    stream = make_stream(language="en")
+
+    stream._process_message({"type": "turn_start"})
+    stream._process_message({"type": "turn_end_candidate", "text": "order lunch"})
+    stream._process_message({"type": "turn_end_candidate", "text": "order lunch"})
+
+    preflights = [e for e in emitted(stream) if e.type == SpeechEventType.PREFLIGHT_TRANSCRIPT]
+    assert len(preflights) == 1
+
+
+def test_a_revised_candidate_does_re_emit_preflight(make_stream: MakeStream) -> None:
+    stream = make_stream(language="en")
+
+    stream._process_message({"type": "turn_start"})
+    stream._process_message({"type": "turn_end_candidate", "text": "order"})
+    stream._process_message({"type": "turn_end_candidate", "text": "order lunch"})
+
+    preflights = [e for e in emitted(stream) if e.type == SpeechEventType.PREFLIGHT_TRANSCRIPT]
+    assert [e.alternatives[0].text for e in preflights] == ["order", "order lunch"]
+
+
+def test_the_last_candidate_still_becomes_the_final(make_stream: MakeStream) -> None:
+    # deduping the preflight must not stop turn_end promoting the candidate
+    stream = make_stream(language="en")
+
+    stream._process_message({"type": "turn_start"})
+    stream._process_message({"type": "turn_end_candidate", "text": "order lunch"})
+    stream._process_message({"type": "turn_end_candidate", "text": "order lunch"})
+    stream._process_message({"type": "turn_end"})
+
+    finals = [e for e in emitted(stream) if e.type == SpeechEventType.FINAL_TRANSCRIPT]
+    assert [e.alternatives[0].text for e in finals] == ["order lunch"]
