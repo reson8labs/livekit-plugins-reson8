@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.3.0](https://github.com/reson8labs/livekit-plugins-reson8/compare/livekit-plugins-reson8-v0.2.4...livekit-plugins-reson8-v0.3.0) (2026-09-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* STT constructor options ([#30](https://github.com/reson8labs/livekit-plugins-reson8/issues/30))
+
+### Features
+
+* add typescript plugin and CI ([#20](https://github.com/reson8labs/livekit-plugins-reson8/issues/20)) ([6afe410](https://github.com/reson8labs/livekit-plugins-reson8/commit/6afe410014f17bdfa67b5b238d9b14f0a7de642d))
+* expose eager and final turn probability thresholds ([#23](https://github.com/reson8labs/livekit-plugins-reson8/issues/23)) ([f23c08e](https://github.com/reson8labs/livekit-plugins-reson8/commit/f23c08ef8a3a832cc78a363b76cdac8dd91c0cd4))
+* LiveKit agents adjustments ([#32](https://github.com/reson8labs/livekit-plugins-reson8/issues/32)) ([2bce14d](https://github.com/reson8labs/livekit-plugins-reson8/commit/2bce14dd9bc792ad9fed292e6c932cac651bd841))
+* prepare livekit port ([#26](https://github.com/reson8labs/livekit-plugins-reson8/issues/26)) ([9b5d8a3](https://github.com/reson8labs/livekit-plugins-reson8/commit/9b5d8a32065bb8f17ad47ef3d5d036ef0fec462d))
+* send metrics, fix stale turn detection across connections ([#29](https://github.com/reson8labs/livekit-plugins-reson8/issues/29)) ([bcda9d6](https://github.com/reson8labs/livekit-plugins-reson8/commit/bcda9d6633da872035b77e358aba76b8fc2bbd32))
+* support biasing options ([#31](https://github.com/reson8labs/livekit-plugins-reson8/issues/31)) ([1f78c3e](https://github.com/reson8labs/livekit-plugins-reson8/commit/1f78c3e24a690064c3c8d29bc7648e3509a31cc6))
+* use aiohttp ([#27](https://github.com/reson8labs/livekit-plugins-reson8/issues/27)) ([05431f5](https://github.com/reson8labs/livekit-plugins-reson8/commit/05431f587071b8eb3a72539f64da1c53f2d064d9))
+
+
+### Bug Fixes
+
+* send flush_request, hold streams weakly, fix updateOptions race ([#21](https://github.com/reson8labs/livekit-plugins-reson8/issues/21)) ([11dea97](https://github.com/reson8labs/livekit-plugins-reson8/commit/11dea97699fc0cebe1b02596a0ed3f9db15c27d5))
+
+
+### Code Refactoring
+
+* STT constructor options ([#30](https://github.com/reson8labs/livekit-plugins-reson8/issues/30)) ([585132e](https://github.com/reson8labs/livekit-plugins-reson8/commit/585132eb1c9e3abd5f39681708bb968bf4bf73b2))
+
 ## [0.2.4](https://github.com/reson8labs/livekit-plugins-reson8/compare/livekit-plugins-reson8-v0.2.3...livekit-plugins-reson8-v0.2.4) (2026-08-24)
 
 
