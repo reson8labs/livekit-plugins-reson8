@@ -240,43 +240,6 @@ def test_unsupported_filler_mode_raises() -> None:
 
 
 @pytest.mark.parametrize(
-    ("build", "other"),
-    [
-        pytest.param(
-            lambda: BiasingOptions(patterns=["[0-9]{4}"], phrases=["reson8"]),
-            "phrases",
-            id="phrases",
-        ),
-        pytest.param(
-            lambda: BiasingOptions(patterns=["[0-9]{4}"], custom_model_id="m1"),
-            "custom_model_id",
-            id="custom-model",
-        ),
-    ],
-)
-def test_patterns_cannot_be_combined_with_biasing(
-    build: Callable[[], BiasingOptions], other: str
-) -> None:
-    with pytest.raises(ValueError, match=f"patterns cannot be combined with {other}"):
-        build()
-
-
-@pytest.mark.parametrize(
-    "build",
-    [
-        pytest.param(lambda: BiasingOptions(patterns=["[0-9]{4}"]), id="patterns-only"),
-        pytest.param(lambda: BiasingOptions(phrases=["reson8"]), id="phrases-only"),
-        pytest.param(
-            lambda: BiasingOptions(phrases=["reson8"], custom_model_id="m1"),
-            id="phrases-and-model",
-        ),
-    ],
-)
-def test_biasing_combinations_the_server_accepts(build: Callable[[], BiasingOptions]) -> None:
-    assert build() is not None
-
-
-@pytest.mark.parametrize(
     "build",
     [
         pytest.param(lambda: BiasingOptions(phrases="Reson8"), id="phrases"),

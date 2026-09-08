@@ -23,7 +23,6 @@ ERROR_MESSAGE_HEADER = "X-Error-Message"
 
 # https://docs.reson8.dev/api/speech-to-text/turns/ and /api/speech-to-text/prerecorded/
 _STATUS_HINTS = {
-    400: "Invalid query parameter, or unknown custom_model_id",
     401: "Missing or invalid credentials, check the provided api_key or RESON8_API_KEY",
     402: "Credit limit exceeded, see https://docs.reson8.dev/limits/",
     413: "The request body exceeds the size limit",
@@ -169,16 +168,17 @@ def integration_headers() -> dict[str, str]:
     return {INTEGRATION_HEADER: f"{INTEGRATION_NAME}:{__version__}"}
 
 
-def problem_code(body: str) -> str | None:
-    """Read the ``code`` field out of a ``problem+json`` error body."""
-
+def problem_message(body: str) -> str | None:
     try:
         parsed = json.loads(body)
     except ValueError:
         return None
 
-    code = parsed.get("code") if isinstance(parsed, dict) else None
-    return code if isinstance(code, str) else None
+    if not isinstance(parsed, dict):
+        return None
+
+    parts = [parsed.get("code"), parsed.get("detail")]
+    return ": ".join(p for p in parts if isinstance(p, str) and p) or None
 
 
 def status_error(status_code: int, *, detail: str | None = None) -> APIStatusError:

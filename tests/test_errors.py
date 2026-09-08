@@ -11,7 +11,7 @@ from livekit.agents.types import APIConnectOptions
 
 from livekit import rtc
 from livekit.plugins import reson8
-from livekit.plugins.reson8._utils import problem_code, status_error
+from livekit.plugins.reson8._utils import problem_message, status_error
 
 NO_RETRY = APIConnectOptions(max_retry=0)
 
@@ -28,8 +28,8 @@ NO_RETRY = APIConnectOptions(max_retry=0)
         ('{"code": 402}', None),
     ],
 )
-def test_problem_code(body: str, expected: str | None) -> None:
-    assert problem_code(body) == expected
+def test_problem_message(body: str, expected: str | None) -> None:
+    assert problem_message(body) == expected
 
 
 def test_status_error_explains_credit_exhaustion() -> None:
@@ -118,7 +118,7 @@ async def test_unreachable_host_is_a_connection_error(
     await stream.aclose()
 
 
-async def test_rejected_batch_request_reports_the_problem_code(
+async def test_rejected_batch_request_reports_the_problem_message(
     reson8_server: StartServer, client_session: aiohttp.ClientSession
 ) -> None:
     server = await reson8_server(post_status=402, post_body='{"code": "session_rejected"}')
@@ -158,3 +158,43 @@ async def test_batch_timeout_is_a_timeout_error(
 
     with pytest.raises(APITimeoutError):
         await _stt(server.api_url, client_session).recognize(_frame(), conn_options=NO_RETRY)
+
+
+def test_problem_message_surfaces_the_detail() -> None:
+    body = '{"title": "Invalid Query Parameter", "status": 400, '
+    body += '"detail": "channels must be between 1 and 10, got: 11", '
+    body += '"code": "invalid_query_parameter"}'
+
+    assert problem_message(body) == (
+        "invalid_query_parameter: channels must be between 1 and 10, got: 11"
+    )
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ('{"code": "session_rejected"}', "session_rejected"),
+        ('{"detail": "Credit limit exceeded"}', "Credit limit exceeded"),
+        ("", None),
+        ("not json", None),
+        ("[]", None),
+        ("{}", None),
+        ('{"code": 402, "detail": null}', None),
+    ],
+)
+def test_problem_message_handles_partial_bodies(body: str, expected: str | None) -> None:
+    assert problem_message(body) == expected
+
+
+async def test_a_rejected_request_reports_which_parameter_was_wrong(
+    reson8_server: StartServer, client_session: aiohttp.ClientSession
+) -> None:
+    server = await reson8_server(
+        post_status=400,
+        post_body='{"code": "invalid_query_parameter", "detail": "Invalid encoding: mp3"}',
+    )
+
+    with pytest.raises(APIStatusError) as excinfo:
+        await _stt(server.api_url, client_session).recognize(_frame(), conn_options=NO_RETRY)
+
+    assert "Invalid encoding: mp3" in excinfo.value.message

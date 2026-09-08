@@ -154,9 +154,6 @@ that does not contain them, and stronger biasing introduces irrelevant terms.
 | `strength` | `None` (server: `0.45`) | additive boost on the model's trained calibration. Raise only when expected terminology is not being recovered |
 | `patterns` | `None` | shapes for short alphanumeric tokens to recover, e.g. `"AMZ[0-9]{6}"` or `"[0-9]{4,6}"` |
 
-`patterns` cannot be combined with `phrases` or `custom_model_id`: Reson8
-recognizes either patterns or biasing phrases, not both.
-
 ```python
 # bias toward vocabulary the model would otherwise miss
 stt = reson8.STT(biasing=reson8.BiasingOptions(phrases=["Reson8", "LiveKit"]))

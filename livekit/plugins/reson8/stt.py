@@ -42,7 +42,7 @@ from ._utils import (
     check_probability,
     integration_headers,
     normalize_languages,
-    problem_code,
+    problem_message,
     resolve_base_url,
     status_error,
 )
@@ -241,13 +241,6 @@ class BiasingOptions:
 
         if self.strength is not None and self.strength < 0:
             raise ValueError(f"strength must be non-negative, got {self.strength}")
-
-        if self.patterns and (self.phrases or self.custom_model_id):
-            other = "phrases" if self.phrases else "custom_model_id"
-            raise ValueError(
-                f"patterns cannot be combined with {other}: Reson8 recognizes either "
-                f"patterns or biasing phrases, not both."
-            )
 
     def query_params(self) -> dict[str, str]:
         params: dict[str, str] = {}
@@ -525,7 +518,7 @@ class STT(stt.STT):
             ) as resp:
                 text = await resp.text()
                 if resp.status != 200:
-                    raise status_error(resp.status, detail=problem_code(text))
+                    raise status_error(resp.status, detail=problem_message(text))
         except asyncio.TimeoutError:
             raise APITimeoutError("Reson8 did not respond in time") from None
         except aiohttp.ClientError as e:
