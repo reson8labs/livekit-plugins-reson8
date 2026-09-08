@@ -159,3 +159,13 @@ def test_build_speech_data_words_carry_timings_and_confidence() -> None:
     assert word.start_time == pytest.approx(1.0)
     assert word.end_time == pytest.approx(1.2)
     assert word.confidence == pytest.approx(0.9)
+
+
+def test_build_speech_data_empty_server_language_falls_back() -> None:
+    data = build_speech_data({"text": "hi", "language": ""}, language="nl")
+    assert data.language == "nl"
+
+
+def test_build_speech_data_empty_server_language_with_autodetect() -> None:
+    data = build_speech_data({"text": "hi", "language": ""}, language=None)
+    assert data.language == ""

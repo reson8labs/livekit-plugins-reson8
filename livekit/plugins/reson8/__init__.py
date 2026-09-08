@@ -1,4 +1,9 @@
-from livekit.plugins.reson8._utils import SUPPORTED_LANGUAGES, Encoding, SupportedLanguage
+from livekit.plugins.reson8._utils import (
+    SUPPORTED_LANGUAGES,
+    Encoding,
+    FillerMode,
+    SupportedLanguage,
+)
 from livekit.plugins.reson8.stt import (
     STT,
     AudioOptions,
@@ -15,6 +20,7 @@ __all__ = [
     "AudioOptions",
     "BiasingOptions",
     "Encoding",
+    "FillerMode",
     "SpeechStream",
     "SupportedLanguage",
     "TranscriptOptions",

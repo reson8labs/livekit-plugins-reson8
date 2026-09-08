@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 from collections.abc import Sequence
 from typing import Any, Literal, get_args
 from urllib.parse import urlencode
@@ -8,6 +10,7 @@ from urllib.parse import urlencode
 from livekit.agents import APIStatusError, LanguageCode, create_api_error_from_http, stt
 from livekit.agents.types import NOT_GIVEN, NotGivenOr, TimedString
 
+from .log import logger
 from .version import __version__
 
 DEFAULT_API_URL = "https://api.reson8.dev"
@@ -18,13 +21,10 @@ INTEGRATION_NAME = "livekit-python"
 
 ERROR_MESSAGE_HEADER = "X-Error-Message"
 
-# https://docs.reson8.dev/api/speech-to-text/turns/ and /api/speech-to-text/prerecorded/
 _STATUS_HINTS = {
-    400: "Invalid query parameter, or unknown custom_model_id",
-    401: "Missing or invalid credentials, check the provided api_key or RESON8_API_KEY",
-    402: "Credit limit exceeded, see https://docs.reson8.dev/limits/",
-    413: "The request body exceeds the size limit",
-    429: "Concurrent connection limit exceeded, see https://docs.reson8.dev/limits/",
+    401: "check the provided api_key or RESON8_API_KEY",
+    402: "see https://docs.reson8.dev/limits/",
+    429: "see https://docs.reson8.dev/limits/",
 }
 
 
@@ -37,11 +37,12 @@ See https://docs.reson8.dev/speech-to-text/features/languages/.
 SUPPORTED_LANGUAGES: tuple[str, ...] = get_args(SupportedLanguage)
 """``SupportedLanguage`` as a runtime tuple, for validation and error messages."""
 
-Encoding = Literal["auto", "pcm_s16le", "mulaw", "alaw"]
-"""Encodings the streaming and batch endpoints both accept.
+Encoding = Literal["pcm_s16le", "mulaw", "alaw"]
+"""Raw encodings this plugin can describe.
 
-The container formats Reson8 documents for prerecorded audio are not listed:
-this plugin always sends raw frames, never a container. See
+Reson8 also accepts container formats and an ``auto`` mode that detects the
+format from the container header, but this plugin always sends raw frames with
+no header, so neither can apply. See
 https://docs.reson8.dev/speech-to-text/features/audio-formats/.
 """
 
@@ -50,6 +51,17 @@ ENCODINGS: tuple[str, ...] = get_args(Encoding)
 # https://docs.reson8.dev/api/speech-to-text/turns/
 MIN_CHANNELS = 1
 MAX_CHANNELS = 10
+MAX_PHRASES = 250
+
+FillerMode = Literal["clean", "natural", "verbatim"]
+"""How filler words are rendered: removed, left to the model, or preserved.
+
+See https://docs.reson8.dev/api/speech-to-text/turns/.
+"""
+
+FILLER_MODES: tuple[str, ...] = get_args(FillerMode)
+
+_COMMA_OUTSIDE_BRACES = re.compile(r",(?![^{}]*})")
 
 
 def normalize_languages(value: str | Sequence[str] | None) -> str | None:
@@ -80,6 +92,64 @@ def normalize_languages(value: str | Sequence[str] | None) -> str | None:
     return ",".join(codes)
 
 
+def check_comma_joined(
+    name: str,
+    values: Sequence[str] | None,
+    *,
+    limit: int | None = None,
+    allow_braced_commas: bool = False,
+) -> None:
+    """
+    Validate entries that reach Reson8 joined into one comma-separated value.
+
+    ``allow_braced_commas`` keeps a comma inside ``{}`` — a ``{m,n}`` repeat
+    range in a pattern — which the server does not treat as a separator.
+    """
+
+    if values is None:
+        return
+
+    if isinstance(values, str):
+        raise ValueError(
+            f"{name} takes a sequence of strings, not a single string; "
+            f"pass [{values!r}] for one entry"
+        )
+
+    if limit is not None and len(values) > limit:
+        raise ValueError(f"{name} accepts at most {limit} entries, got {len(values)}")
+
+    for value in values:
+        if not value.strip():
+            raise ValueError(f"{name} cannot contain an empty entry")
+
+        if allow_braced_commas:
+            if _COMMA_OUTSIDE_BRACES.search(value):
+                raise ValueError(
+                    f"{name} entries are comma-separated on the wire, so a comma outside "
+                    f"braces would split this entry: {value!r}. A comma inside a {{m,n}} "
+                    f"range is fine."
+                )
+        elif "," in value:
+            raise ValueError(
+                f"{name} is comma-separated on the wire, so no entry may contain a comma: {value!r}"
+            )
+
+
+def check_probability(name: str, value: float | None) -> None:
+    if value is not None and not 0.0 <= value <= 1.0:
+        raise ValueError(f"{name} must be between 0 and 1, got {value}")
+
+
+def resolve_base_url(base_url: str | None) -> str:
+    resolved = base_url or os.environ.get("RESON8_BASE_URL")
+
+    if not resolved and (legacy := os.environ.get("RESON8_API_URL")):
+        logger.warning("RESON8_API_URL is deprecated, use RESON8_BASE_URL instead")
+        resolved = legacy
+
+    return (resolved or DEFAULT_API_URL).rstrip("/")
+
+
 def build_url(base_url: str, path: str, params: dict[str, str], *, websocket: bool = False) -> str:
     base = base_url.rstrip("/")
     if websocket:
@@ -96,16 +166,17 @@ def integration_headers() -> dict[str, str]:
     return {INTEGRATION_HEADER: f"{INTEGRATION_NAME}:{__version__}"}
 
 
-def problem_code(body: str) -> str | None:
-    """Read the ``code`` field out of a ``problem+json`` error body."""
-
+def problem_message(body: str) -> str | None:
     try:
         parsed = json.loads(body)
     except ValueError:
         return None
 
-    code = parsed.get("code") if isinstance(parsed, dict) else None
-    return code if isinstance(code, str) else None
+    if not isinstance(parsed, dict):
+        return None
+
+    parts = [parsed.get("code"), parsed.get("detail")]
+    return ": ".join(p for p in parts if isinstance(p, str) and p) or None
 
 
 def status_error(status_code: int, *, detail: str | None = None) -> APIStatusError:

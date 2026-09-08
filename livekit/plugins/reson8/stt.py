@@ -25,41 +25,31 @@ from livekit.agents.utils import is_given
 from livekit import rtc
 
 from ._utils import (
-    DEFAULT_API_URL,
     ENCODINGS,
     ERROR_MESSAGE_HEADER,
+    FILLER_MODES,
     MAX_CHANNELS,
+    MAX_PHRASES,
     MIN_CHANNELS,
     PRERECORDED_PATH,
     TURNS_PATH,
     Encoding,
+    FillerMode,
     auth_headers,
     build_speech_data,
     build_url,
+    check_comma_joined,
+    check_probability,
     integration_headers,
     normalize_languages,
-    problem_code,
+    problem_message,
+    resolve_base_url,
     status_error,
 )
 from .log import logger
 
 KEEPALIVE_INTERVAL = 30.0
 _SEND_CHUNK_MS = 100
-
-
-def _resolve_base_url(base_url: str | None) -> str:
-    resolved = base_url or os.environ.get("RESON8_BASE_URL")
-
-    if not resolved and (legacy := os.environ.get("RESON8_API_URL")):
-        logger.warning("RESON8_API_URL is deprecated, use RESON8_BASE_URL instead")
-        resolved = legacy
-
-    return (resolved or DEFAULT_API_URL).rstrip("/")
-
-
-def _check_probability(name: str, value: float | None) -> None:
-    if value is not None and not 0.0 <= value <= 1.0:
-        raise ValueError(f"{name} must be between 0 and 1, got {value}")
 
 
 @dataclass(frozen=True)
@@ -89,8 +79,8 @@ class TurnOptions:
     final_probability: float | None = None
 
     def __post_init__(self) -> None:
-        _check_probability("eager_probability", self.eager_probability)
-        _check_probability("final_probability", self.final_probability)
+        check_probability("eager_probability", self.eager_probability)
+        check_probability("final_probability", self.final_probability)
 
         eager = self.eager_probability
         final = self.final_probability
@@ -170,19 +160,30 @@ class AudioOptions:
 @dataclass(frozen=True)
 class TranscriptOptions:
     """
-    Which extra detail Reson8 reports alongside the transcript.
+    How the transcript is produced, and what detail accompanies it.
 
     Args:
         words: Word-level results, each with its own timing.
         timestamps: Start and end times on the transcript itself.
         language: The detected language code.
         confidence: Per-word confidence. Batch recognition only.
+        filler_mode: What to do with filler words: ``"clean"`` removes them,
+            ``"natural"`` lets the model decide, ``"verbatim"`` preserves them.
+            ``None`` leaves the server's default.
     """
 
     words: bool = False
     timestamps: bool = False
     language: bool = False
     confidence: bool = False
+    filler_mode: FillerMode | None = None
+
+    def __post_init__(self) -> None:
+        if self.filler_mode is not None and self.filler_mode not in FILLER_MODES:
+            raise ValueError(
+                f"unsupported filler_mode: {self.filler_mode}. "
+                f"Reson8 accepts: {', '.join(sorted(FILLER_MODES))}."
+            )
 
     def query_params(self, *, streaming: bool) -> dict[str, str]:
         params: dict[str, str] = {}
@@ -199,27 +200,64 @@ class TranscriptOptions:
         if self.confidence and not streaming:
             params["include_confidence"] = "true"
 
+        if self.filler_mode is not None:
+            params["filler_mode"] = self.filler_mode
+
         return params
 
 
 @dataclass(frozen=True)
 class BiasingOptions:
     """
-    How to bias recognition toward expected terminology.
+    How to bias recognition toward terminology you expect.
 
-    See https://docs.reson8.dev/speech-to-text/features/custom-models/.
+    See https://docs.reson8.dev/speech-to-text/features/custom-models/
+    and https://docs.reson8.dev/speech-to-text/features/patterns/.
 
     Args:
-        custom_model_id: A custom model to recognize against.
+        custom_model_id: A custom model to bias toward, for a vocabulary too
+            large for ``phrases`` or one reused across requests. Build the
+            model in Reson8 and pass its id here.
+        phrases: Terms to bias toward, at most 250.
+        strength: Additive boost on top of the model's trained calibration,
+            non-negative and unbounded. The server default suits most
+            requests; raise it only when expected terminology is not being
+            recovered.
+        patterns: Regex-style shapes for short alphanumeric tokens to recover,
+            such as ``"AMZ[0-9]{6}"`` for an order code,
+            ``"[0-9]{4,6}"`` for a variable-length one, or
+            ``"[A-Z]{2}[0-9]{2} [A-Z]{3}"`` for a licence plate. Set these only
+            when the token is likely to be spoken.
     """
 
     custom_model_id: str | None = None
+    phrases: Sequence[str] | None = None
+    strength: float | None = None
+    patterns: Sequence[str] | None = None
+
+    def __post_init__(self) -> None:
+        check_comma_joined("phrases", self.phrases, limit=MAX_PHRASES)
+        check_comma_joined("patterns", self.patterns, allow_braced_commas=True)
+
+        if self.strength is not None and self.strength < 0:
+            raise ValueError(f"strength must be non-negative, got {self.strength}")
 
     def query_params(self) -> dict[str, str]:
-        if not self.custom_model_id:
-            return {}
+        params: dict[str, str] = {}
 
-        return {"custom_model_id": self.custom_model_id}
+        if self.custom_model_id:
+            params["custom_model_id"] = self.custom_model_id
+
+        if self.phrases:
+            params["phrases"] = ",".join(self.phrases)
+
+        if self.patterns:
+            params["patterns"] = ",".join(self.patterns)
+
+        if self.strength is not None:
+            params["bias_strength"] = str(self.strength)
+
+        return params
 
 
 @dataclass(frozen=True)
@@ -291,7 +329,7 @@ class STT(stt.STT):
       boundaries server-side and emits a turn-end *candidate* once it believes a
       turn is complete. That candidate surfaces as a preflight transcript the
       agent can act on speculatively, and is then either confirmed as a final
-      transcript or cancelled when the speaker keeps talking. Ideal for
+      transcript or replaced by a later candidate. Ideal for
       low-latency voice agents.
     * **Batch** (:meth:`recognize`) sends pre-recorded audio to
       ``/v1/speech-to-text/prerecorded`` and returns the full transcript.
@@ -376,7 +414,7 @@ class STT(stt.STT):
             )
 
         self._api_key = api_key
-        self._base_url = _resolve_base_url(base_url)
+        self._base_url = resolve_base_url(base_url)
         self._opts = STTOptions(
             language=normalize_languages(language),
             turn=turn or TurnOptions(),
@@ -480,7 +518,7 @@ class STT(stt.STT):
             ) as resp:
                 text = await resp.text()
                 if resp.status != 200:
-                    raise status_error(resp.status, detail=problem_code(text))
+                    raise status_error(resp.status, detail=problem_message(text))
         except asyncio.TimeoutError:
             raise APITimeoutError("Reson8 did not respond in time") from None
         except aiohttp.ClientError as e:
@@ -692,9 +730,6 @@ class SpeechStream(stt.RecognizeStream):
                         alternatives=[self._candidate],
                     )
                 )
-
-        elif msg_type == "turn_continuation":
-            self._candidate = None
 
         elif msg_type == "turn_end":
             candidate = self._candidate
