@@ -39,13 +39,16 @@ export interface Reson8Transcript {
 }
 
 /**
- * Reson8 returns confidence as a natural log-probability (<= 0). Convert it to
- * a probability in (0, 1] for LiveKit's confidence fields.
+ * Reson8 reports word confidence as a probability in (0, 1].
+ *
+ * See https://docs.reson8.dev/glossary/.
  */
-function toProbability(logProb: number | null | undefined): number | undefined {
-  if (logProb === undefined || logProb === null) return undefined;
-  const p = Math.exp(logProb);
-  return Number.isFinite(p) ? p : 1.0;
+export function wordConfidence(word: Reson8Word): number | undefined {
+  const confidence = word.confidence;
+
+  if (confidence === undefined || confidence === null || !(confidence > 0)) return undefined;
+
+  return Math.min(confidence, 1.0);
 }
 
 function wordTime(word: Reson8Word, key: 'start' | 'end', offset: number): number | undefined {
@@ -66,22 +69,19 @@ export function buildSpeechData(
   { language, startTimeOffset = 0 }: { language?: string | null; startTimeOffset?: number },
 ): stt.SpeechData {
   const rawWords = msg.words ?? [];
-  const words = rawWords.map((w) =>
+  const confidences = rawWords.map(wordConfidence);
+  const words = rawWords.map((w, i) =>
     createTimedString({
       text: w.text ?? '',
       startTime: wordTime(w, 'start', startTimeOffset),
       endTime: wordTime(w, 'end', startTimeOffset),
-      confidence: toProbability(w.confidence),
+      confidence: confidences[i],
       startTimeOffset,
     }),
   );
 
-  const wordProbs = rawWords
-    .filter((w) => w.confidence !== undefined && w.confidence !== null)
-    .map((w) => toProbability(w.confidence))
-    .filter((p): p is number => p !== undefined);
-  const confidence =
-    wordProbs.length > 0 ? wordProbs.reduce((a, b) => a + b, 0) / wordProbs.length : 1.0;
+  const known = confidences.filter((c): c is number => c !== undefined);
+  const confidence = known.length > 0 ? known.reduce((a, b) => a + b, 0) / known.length : 1.0;
 
   let startTime = startTimeOffset;
   let endTime = startTimeOffset;
