@@ -20,21 +20,13 @@ import {
   toWsBase,
 } from './utils.js';
 
-const SERVER_DEFAULT_EAGER_TURN_PROBABILITY = 0.5;
-const SERVER_DEFAULT_FINAL_TURN_PROBABILITY = 0.92;
+export type STTModel = 'resonant-1' | 'rumble-2';
 
 /** Reson8's two turn-boundary confidence thresholds. */
 export interface TurnOptions {
-  /**
-   * Confidence (0-1) at which the preflight transcript is emitted. Server
-   * default `0.5`.
-   */
+  /** Confidence (0-1) at which the preflight transcript is emitted. */
   eagerTurnProbability?: number;
-  /**
-   * Confidence (0-1) at which the turn commits. Server default `0.92`, tuned
-   * for conversational speech; a one-word confirmation can take over a second
-   * to cross it.
-   */
+  /** Confidence (0-1) at which the turn commits. */
   finalTurnProbability?: number;
 }
 
@@ -49,8 +41,8 @@ function validateTurnOptions(turn: TurnOptions): void {
   checkProbability('eagerTurnProbability', turn.eagerTurnProbability);
   checkProbability('finalTurnProbability', turn.finalTurnProbability);
 
-  const eager = turn.eagerTurnProbability ?? SERVER_DEFAULT_EAGER_TURN_PROBABILITY;
-  const final = turn.finalTurnProbability ?? SERVER_DEFAULT_FINAL_TURN_PROBABILITY;
+  const { eagerTurnProbability: eager, finalTurnProbability: final } = turn;
+  if (eager === undefined || final === undefined) return;
 
   if (eager > final) {
     throw new Error(
@@ -72,6 +64,7 @@ function formatProbability(value: number): string {
 
 /** Resolved Reson8 STT options shared by the {@link STT} and {@link SpeechStream}. */
 export interface STTOptions {
+  model: STTModel | null;
   language: string | null;
   sampleRate: number;
   encoding: string;
@@ -90,6 +83,11 @@ export interface STTConstructorOptions {
   apiKey?: string;
   /** Reson8 API base URL. Falls back to `RESON8_API_URL` or `https://api.reson8.dev`. */
   apiUrl?: string;
+  /**
+   * Reson8 model, e.g. `rumble-2`.
+   * Fixed for the lifetime of the instance.
+   */
+  model?: STTModel;
   /**
    * Any language code (e.g. `"en"`, `"nl"`, `"es"`, ...). Leave unset to
    * auto-detect the spoken language.
@@ -112,13 +110,15 @@ export interface STTConstructorOptions {
   /** Report the detected language code (streaming). */
   includeLanguage?: boolean;
   /**
-   * Confidence (0-1) at which the preflight transcript is emitted. Server
-   * default `0.5`. Must be below {@link finalTurnProbability}.
+   * Confidence (0-1) at which the preflight transcript is emitted. Leave unset
+   * for the model's default. Keep it below {@link finalTurnProbability}, or no
+   * preflight transcript is sent.
    */
   eagerTurnProbability?: number;
   /**
-   * Confidence (0-1) at which the turn commits. Server default `0.92`. Lower it
-   * to commit sooner, at the risk of cutting off longer utterances.
+   * Confidence (0-1) at which the turn commits. Leave unset for the model's
+   * default. Lower it to commit sooner, at the risk of cutting off longer
+   * utterances.
    */
   finalTurnProbability?: number;
 }
@@ -142,6 +142,7 @@ function queryParams(opts: STTOptions, { streaming }: { streaming: boolean }): U
     sample_rate: String(opts.sampleRate),
     channels: String(opts.channels),
   });
+  if (opts.model) params.set('model', opts.model);
   // Any language is supported. When omitted, Reson8 auto-detects the spoken
   // language; otherwise this pins recognition to the given code.
   if (opts.language) params.set('language', opts.language);
@@ -167,7 +168,7 @@ function queryParams(opts: STTOptions, { streaming }: { streaming: boolean }): U
 /**
  * Reson8 speech-to-text.
  *
- * A single model that adapts to how LiveKit uses it:
+ * One STT that adapts to how LiveKit uses it:
  *
  * - **Streaming** ({@link stream}) connects to the turn-aware
  *   `/v1/speech-to-text/turns` endpoint. Reson8 detects conversational turn
@@ -205,6 +206,7 @@ export class STT extends stt.STT {
       '',
     );
     this.#opts = {
+      model: opts.model ?? null,
       language: opts.language ?? null,
       sampleRate: opts.sampleRate ?? 16000,
       encoding: opts.encoding ?? 'pcm_s16le',
@@ -228,7 +230,7 @@ export class STT extends stt.STT {
   }
 
   override get model(): string {
-    return this.#opts.customModelId ?? 'default';
+    return this.#opts.model ?? 'default';
   }
 
   override get provider(): string {
