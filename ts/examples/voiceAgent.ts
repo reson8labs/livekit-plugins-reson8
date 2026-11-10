@@ -9,10 +9,7 @@ export default defineAgent({
     await ctx.connect();
 
     const session = new voice.AgentSession({
-      stt: new reson8.STT({
-        eagerTurnProbability: 0.5,
-        finalTurnProbability: 0.7,
-      }),
+      stt: new reson8.STT({ model: 'rumble-2' }),
       llm: new openai.LLM(),
       tts: new openai.TTS(),
       turnHandling: {

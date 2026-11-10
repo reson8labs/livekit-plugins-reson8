@@ -157,6 +157,7 @@ describe('handshake', () => {
     expect(url.searchParams.get('channels')).toBe('1');
     expect(url.searchParams.has('include_words')).toBe(false);
     expect(url.searchParams.has('language')).toBe(false);
+    expect(url.searchParams.has('model')).toBe(false);
   });
 
   it('pins the language when one is given', async () => {
@@ -228,6 +229,26 @@ describe('turn lifecycle', () => {
       stt.SpeechEventType.PREFLIGHT_TRANSCRIPT,
       stt.SpeechEventType.END_OF_SPEECH,
     ]);
+  });
+
+  it('finalises the latest candidate when candidates replace each other without a continuation', async () => {
+    // rumble-2 never sends turn_continuation: a resumed turn just gets a newer candidate.
+    const { stream, ws } = await connectedStream({ model: 'rumble-2' });
+
+    send(ws, { type: 'turn_start' });
+    send(ws, { type: 'turn_end_candidate', text: 'hello' });
+    send(ws, { type: 'turn_end_candidate', text: 'hello world' });
+    send(ws, { type: 'turn_end' });
+
+    const events = await collect(stream, 5);
+    expect(events.map((e) => e.type)).toEqual([
+      stt.SpeechEventType.START_OF_SPEECH,
+      stt.SpeechEventType.PREFLIGHT_TRANSCRIPT,
+      stt.SpeechEventType.PREFLIGHT_TRANSCRIPT,
+      stt.SpeechEventType.FINAL_TRANSCRIPT,
+      stt.SpeechEventType.END_OF_SPEECH,
+    ]);
+    expect(events[3]!.alternatives?.[0]!.text).toBe('hello world');
   });
 
   it('opens the turn once even when several messages could open it', async () => {
@@ -401,27 +422,34 @@ describe('turn thresholds', () => {
     }
   });
 
-  it('rejects an eager threshold at or above final', () => {
+  it('rejects an eager threshold above final', () => {
     expect(() => new STT({ apiKey: 'k', eagerTurnProbability: 0.5, finalTurnProbability: 0.4 })).toThrow(
       /must be below finalTurnProbability/,
     );
+  });
 
-    expect(() => new STT({ apiKey: 'k', eagerTurnProbability: 0.95 })).toThrow(
-      /must be below finalTurnProbability \(0\.92\)/,
-    );
+  it('does not check a lone threshold against a default, since defaults differ per model', async () => {
+    expect(() => new STT({ apiKey: 'k', eagerTurnProbability: 0.95 })).not.toThrow();
+
+    // rumble-2 pairs this with its own eager default (0.3), not resonant-1's 0.5.
+    const { server } = await connectedStream({ model: 'rumble-2', finalTurnProbability: 0.4 });
+    const url = new URL(server.handshakes[0]!.url, 'http://127.0.0.1');
+
+    expect(url.searchParams.get('final_turn_probability')).toBe('0.4');
+    expect(url.searchParams.has('eager_turn_probability')).toBe(false);
   });
 
   it('warns, but does not throw, when the two thresholds are equal', () => {
     const warn = vi.spyOn(log(), 'warn').mockImplementation(() => log());
     try {
       expect(() => new STT({ apiKey: 'k', eagerTurnProbability: 0.5, finalTurnProbability: 0.5 })).not.toThrow();
-      expect(() => new STT({ apiKey: 'k', finalTurnProbability: 0.5 })).not.toThrow();
 
-      expect(warn).toHaveBeenCalledTimes(2);
+      expect(warn).toHaveBeenCalledTimes(1);
       expect(warn.mock.calls[0]![0]).toMatch(/no lead time/);
 
       warn.mockClear();
       new STT({ apiKey: 'k' });
+      new STT({ apiKey: 'k', finalTurnProbability: 0.5 });
       new STT({ apiKey: 'k', eagerTurnProbability: 0.35, finalTurnProbability: 0.7 });
 
       expect(warn).not.toHaveBeenCalled();
@@ -458,6 +486,45 @@ describe('turn thresholds', () => {
 
       expect(url.searchParams.get('include_confidence')).toBe('true');
       expect(url.searchParams.has('include_language')).toBe(false);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});
+
+describe('model', () => {
+  it('leaves the model to the server when unset', () => {
+    const client = new STT({ apiKey: 'k' });
+
+    expect(client.model).toBe('default');
+  });
+
+  it('selects a streaming model on the turns handshake', async () => {
+    const { server, client } = await connectedStream({ model: 'rumble-2' });
+
+    const url = new URL(server.handshakes[0]!.url, 'http://127.0.0.1');
+    expect(url.searchParams.get('model')).toBe('rumble-2');
+    expect(client.model).toBe('rumble-2');
+  });
+
+  it('selects the model on the batch endpoint', async () => {
+    const realFetch = globalThis.fetch;
+    let seenUrl: string | undefined;
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+      seenUrl = String(input);
+      return new Response(JSON.stringify({ text: 'batched' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const event = await new STT({ apiKey: 'k', model: 'rumble-2' }).recognize(frame(1600));
+      expect(event.alternatives?.[0]!.text).toBe('batched');
+
+      const url = new URL(seenUrl!);
+      expect(url.pathname).toBe('/v1/speech-to-text/prerecorded');
+      expect(url.searchParams.get('model')).toBe('rumble-2');
     } finally {
       globalThis.fetch = realFetch;
     }
